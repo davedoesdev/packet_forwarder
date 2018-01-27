@@ -39,6 +39,7 @@ Maintainer: Michael Coracin
 #include <errno.h>          /* error messages */
 #include <math.h>           /* modf */
 #include <assert.h>
+#include <inttypes.h>
 
 #include <sys/socket.h>     /* socket specific definitions */
 #include <netinet/in.h>     /* INET constants and stuff */
@@ -1625,7 +1626,7 @@ void thread_up(void) {
                 j = lgw_cnt2gps(local_ref, p->count_us, &pkt_gps_time);
                 if (j == LGW_GPS_SUCCESS) {
                     pkt_gps_time_ms = pkt_gps_time.tv_sec * 1E3 + pkt_gps_time.tv_nsec / 1E6;
-                    j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"tmms\":%llu",
+                    j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"tmms\":%" PRIu64,
                                     pkt_gps_time_ms); /* GPS time in milliseconds since 06.Jan.1980 */
                     if (j > 0) {
                         buff_index += j;
@@ -2724,7 +2725,7 @@ void thread_gps(void) {
         /* blocking non-canonical read on serial port */
         ssize_t nb_char = read(gps_tty_fd, serial_buff + wr_idx, LGW_GPS_MIN_MSG_SIZE);
         if (nb_char <= 0) {
-            MSG("WARNING: [gps] read() returned value %d\n", nb_char);
+            MSG("WARNING: [gps] read() returned value %zd\n", nb_char);
             continue;
         }
         wr_idx += (size_t)nb_char;

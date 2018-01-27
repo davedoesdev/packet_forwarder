@@ -1,6 +1,6 @@
 ### Environment constants 
 
-LGW_PATH ?= ../../lora_gateway/libloragw
+LGW_PATH ?= ../../lora_gateway_shared/libloragw
 ARCH ?=
 CROSS_COMPILE ?=
 export

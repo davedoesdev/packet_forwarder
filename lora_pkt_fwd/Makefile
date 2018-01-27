@@ -22,7 +22,17 @@ RELEASE_VERSION := `cat ../VERSION`
 CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
 
-CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I.
+CCFLAGS := -O2 -Wall -Wextra -Iinc -I. -fPIC
+CFLAGS := $(CCFLAGS) -std=c99 \
+          -Dmain=$(APP_NAME)_main \
+          -Dsocket=mem_socket \
+          -Dconnect=mem_connect \
+          -Dsetsockopt=mem_setsockopt \
+          -Dsend=mem_send \
+          -Drecv=mem_recv \
+          -Dshutdown=mem_shutdown \
+          -Dexit=mem_exit \
+          -Dsigaction=mem_sigaction
 VFLAG := -D VERSION_STRING="\"$(RELEASE_VERSION)\""
 
 ### Constants for Lora concentrator HAL library
@@ -42,11 +52,11 @@ LIBS := -lloragw -lrt -lpthread -lm
 
 ### General build targets
 
-all: $(APP_NAME)
+all: liblora_comms.so
 
 clean:
 	rm -f $(OBJDIR)/*.o
-	rm -f $(APP_NAME)
+	rm -f lib$(APP_NAME).so
 
 ### Sub-modules compilation
 
@@ -56,12 +66,18 @@ $(OBJDIR):
 $(OBJDIR)/%.o: src/%.c $(INCLUDES) | $(OBJDIR)
 	$(CC) -c $(CFLAGS) -I$(LGW_PATH)/inc $< -o $@
 
+$(OBJDIR)/%.o: src/%.cc $(INCLUDES) | $(OBJDIR)
+	$(CC) -c $(CCFLAGS) -I$(LGW_PATH)/inc $< -o $@
+
 ### Main program compilation and assembly
 
 $(OBJDIR)/$(APP_NAME).o: src/$(APP_NAME).c $(LGW_INC) $(INCLUDES) | $(OBJDIR)
 	$(CC) -c $(CFLAGS) $(VFLAG) -I$(LGW_PATH)/inc $< -o $@
 
-$(APP_NAME): $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.a $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o
-	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o -o $@ $(LIBS)
+lib$(APP_NAME).so: $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.so $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o
+	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o -shared -o $@ $(LIBS)
+
+liblora_comms.so: $(OBJDIR)/mem_comms.o lib$(APP_NAME).so
+	$(CC) $< -shared -o $@
 
 ### EOF
