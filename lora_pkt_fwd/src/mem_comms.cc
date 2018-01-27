@@ -2,12 +2,55 @@
 #include <sys/socket.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <errno.h>
+#include <queue>
+#include <vector>
 
 #define SOCKET_UP   0
 #define SOCKET_DOWN 1
 
+class Queue
+{
+public:
+    ssize_t send(const void *buf, size_t len,
+                 size_t hwm, const struct timeval &timeout)
+    {
+        // timeout 0 means block
+        // hwm 0 means write always
+        // otherwise, wait until buffered data < hwm
+    }
+
+    ssize_t recv(void *buf, size_t len, const struct timeval &timeout)
+    {
+        // timeout 0 means block
+    }
+
+private:
+// mutex, condvar
+    std::queue<std::vector<uint8_t>> q;
+};
+
+class Link
+{
+public:
+    void reset()
+    {
+        timeout = {};
+    }
+
+    void set_timeout(const struct timeval &timeout)
+    {
+        this->timeout = timeout;
+    }
+
+private:
+    struct timeval timeout;
+    Queue from_fwd, to_fwd;
+};
+
 static int next_socket;
-static struct timeval timeout_up, timeout_down;
+static Link links[2];
 static int exit_status;
 static sighandler_t signal_handler;
 
@@ -17,39 +60,55 @@ extern "C" {
 
 int mem_socket(int, int, int)
 {
-    if (next_socket == SOCKET_UP)
+    if (next_socket > SOCKET_DOWN)
     {
-        timeout_up = {};
-    }
-    else if (next_socket == SOCKET_DOWN)
-    {
-        timeout_down = {};
+        errno = EMFILE;
+        return -1;
     }
 
+    links[next_socket].reset();
     return next_socket++;
 }
 
-int mem_connect(int, const struct sockaddr*, socklen_t)
+int mem_connect(int sockfd, const struct sockaddr*, socklen_t)
 {
+    if (sockfd > SOCKET_DOWN)
+    {
+        errno = EBADF;
+        return -1;
+    }
+
     return 0;
 }
 
 int mem_setsockopt(int sockfd, int level, int optname,
                    const void* optval, socklen_t optlen)
 {
-    if ((level == SOL_SOCKET) && (optname == SO_RCVTIMEO) &&
-        optval && (optlen == sizeof(struct timeval)))
+    if (sockfd > SOCKET_DOWN)
     {
-        auto *ptimeout = static_cast<const struct timeval*>(optval);
-        if (sockfd == SOCKET_UP)
-        {
-            timeout_up = *ptimeout;
-        }
-        else if (sockfd == SOCKET_DOWN)
-        {
-            timeout_down = *ptimeout;
-        }
+        errno = EBADF;
+        return -1;
     }
+
+    if (optname != SO_RCVTIMEO)
+    {
+        errno = ENOPROTOOPT;
+        return -1;
+    }
+
+    if (!optval)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+
+    if ((level != SOL_SOCKET) || (optlen != sizeof(struct timeval)))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    links[sockfd].set_timeout(*static_cast<const struct timeval*>(optval));
 
     return 0;
 }
