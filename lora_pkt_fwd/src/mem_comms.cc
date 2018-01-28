@@ -9,10 +9,10 @@
 #include <vector>
 #include <chrono>
 
-#define SOCKET_UP   0
-#define SOCKET_DOWN 1
-
 using namespace std::chrono_literals;
+
+const int SOCKET_UP = 0,
+          SOCKET_DOWN = 1;
 
 class Queue
 {
