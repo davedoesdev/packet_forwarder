@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <errno.h>
 #include <queue>
 #include <vector>
@@ -20,52 +21,82 @@ template<typename Duration>
 class Queue
 {
 public:
-    typedef std::queue<std::vector<uint8_t>> queue_t;
+    typedef std::vector<uint8_t> element_t;
+    typedef std::queue<element_t> queue_t;
 
     void reset()
     {
         queue_t empty;
         std::swap(q, empty);
+        size = 0;
     }
 
-    ssize_t send(const void * /*buf*/, size_t /*len*/,
-                 ssize_t hwm, const Duration &timeout)
+    ssize_t write(const void *buf, size_t len,
+                  ssize_t hwm, const Duration &timeout)
     {
-        if (hwm < 0)
+        std::lock_guard<std::mutex> lock(m);
+
+        if ((hwm >= 0) && (size > hwm))
         {
-            // hwm < 0 means write always
+            // wait for until buffered data size <= hwm
+            auto pred = [this, hwm] { return this->size <= hwm; };
+
+            if (timeout < 0)
+            {
+                // timeout < 0 means block
+                cv.wait(lock, pred);
+            }
+            else if (!cv.wait_for(lock, timeout, pred))
+            {
+                errno = EAGAIN;
+                return -1;
+            }
         }
-        else if (timeout < 0)
-        {
-            // timeout < 0 means block
-        }
-        else
-        {
-            // else wait for timeout until buffered data <= hwm
-        }
+
+        auto bytes = static_cast<const uint8_t*>(buf);
+        q.emplace(bytes, &bytes[len]);
+        size += len;
+
+        // TODO: what about dropping if queue too big?
 
         return 0;
     }
 
-    ssize_t recv(void * /*buf*/, size_t /*len*/,
+    ssize_t read(void *buf, size_t len,
                  const Duration &timeout)
     {
-        if (timeout < 0)
+        std::lock_guard<std::mutex> lock(m);
+
+        if (q.empty())
         {
-            // timeout < 0 means block
-        }
-        else
-        {
-            // else wait for timeout until data is available
+            auto pred = [this] { return !this->q.empty(); };
+
+            if (timeout < 0)
+            {
+                // timeout < 0 means block
+                cv.wait(lock, pred);
+            }
+            else if (!cv.wait_for(lock, timeout, pred))
+            {
+                errno = EAGAIN;
+                return -1;
+            }
         }
 
-        return 0;
+        element_t &el = q.front();
+        ssize_t r = std::min(el.size(), len);
+        memcpy(buf, el.data(), r);
+        q.pop();
+        size -= el.size();
+
+        return r;
     }
 
 private:
     std::mutex m;
     std::condition_variable cv;
     queue_t q;
+    size_t size = 0;
 };
 
 class Link
@@ -162,11 +193,13 @@ int mem_setsockopt(int sockfd, int level, int optname,
 
 ssize_t mem_send(int /*sockfd*/, const void * /*buf*/, size_t /*len*/, int /*flags*/)
 {
+    // TODO
     return 0;
 }
 
 ssize_t mem_recv(int /*sockfd*/, void * /*buf*/, size_t /*len*/, int /*flags*/)
 {
+    // TODO
     return 0;
 }
 
@@ -207,6 +240,7 @@ void stop()
     signal_handler(SIGTERM);
 }
 
+// TODO
 // we'll have two sockets, up first then down
 // each should have a read and write queue
 // then export functions to read and write from each
