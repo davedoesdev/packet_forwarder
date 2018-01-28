@@ -8,47 +8,74 @@
 #include <queue>
 #include <vector>
 #include <chrono>
+#include <mutex>
+#include <condition_variable>
 
 using namespace std::chrono_literals;
 
 const int SOCKET_UP = 0,
           SOCKET_DOWN = 1;
 
+template<typename Duration>
 class Queue
 {
 public:
-    ssize_t send(const void * /*buf*/, size_t /*len*/,
-                 ssize_t /*hwm*/, const std::chrono::microseconds &/*timeout*/)
+    typedef std::queue<std::vector<uint8_t>> queue_t;
+
+    void reset()
     {
-        // timeout < 0 means block
-        // hwm < 0 means write always
-        // otherwise, wait until buffered data <= hwm
+        queue_t empty;
+        std::swap(q, empty);
+    }
+
+    ssize_t send(const void * /*buf*/, size_t /*len*/,
+                 ssize_t hwm, const Duration &timeout)
+    {
+        if (hwm < 0)
+        {
+            // hwm < 0 means write always
+        }
+        else if (timeout < 0)
+        {
+            // timeout < 0 means block
+        }
+        else
+        {
+            // else wait for timeout until buffered data <= hwm
+        }
+
         return 0;
     }
 
     ssize_t recv(void * /*buf*/, size_t /*len*/,
-                 const std::chrono::microseconds &/*timeout*/)
+                 const Duration &timeout)
     {
-        // timeout < 0 means block
+        if (timeout < 0)
+        {
+            // timeout < 0 means block
+        }
+        else
+        {
+            // else wait for timeout until data is available
+        }
+
         return 0;
     }
 
 private:
-// mutex, condvar
-    std::queue<std::vector<uint8_t>> q;
+    std::mutex m;
+    std::condition_variable cv;
+    queue_t q;
 };
 
 class Link
 {
 public:
-    Link()
-    {
-        reset();
-    }
-
     void reset()
     {
         timeout = -1us;
+        from_fwd.reset();
+        to_fwd.reset();
     }
 
     void set_timeout(const struct timeval &timeout)
@@ -65,8 +92,8 @@ public:
     }
 
 private:
-    std::chrono::microseconds timeout;
-    Queue from_fwd, to_fwd;
+    std::chrono::microseconds timeout = -1us;
+    Queue<std::chrono::microseconds> from_fwd, to_fwd;
 };
 
 static int next_socket;
