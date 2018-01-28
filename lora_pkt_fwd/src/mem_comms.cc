@@ -34,14 +34,14 @@ public:
     ssize_t write(const void *buf, size_t len,
                   ssize_t hwm, const Duration &timeout)
     {
-        std::lock_guard<std::mutex> lock(m);
+        std::unique_lock<std::mutex> lock(m);
 
         if ((hwm >= 0) && (size > hwm))
         {
             // wait for until buffered data size <= hwm
             auto pred = [this, hwm] { return this->size <= hwm; };
 
-            if (timeout < 0)
+            if (timeout < Duration::zero())
             {
                 // timeout < 0 means block
                 cv.wait(lock, pred);
@@ -62,16 +62,15 @@ public:
         return 0;
     }
 
-    ssize_t read(void *buf, size_t len,
-                 const Duration &timeout)
+    ssize_t read(void *buf, size_t len, const Duration &timeout)
     {
-        std::lock_guard<std::mutex> lock(m);
+        std::unique_lock<std::mutex> lock(m);
 
         if (q.empty())
         {
             auto pred = [this] { return !this->q.empty(); };
 
-            if (timeout < 0)
+            if (timeout < Duration::zero())
             {
                 // timeout < 0 means block
                 cv.wait(lock, pred);
@@ -96,7 +95,7 @@ private:
     std::mutex m;
     std::condition_variable cv;
     queue_t q;
-    size_t size = 0;
+    ssize_t size = 0;
 };
 
 class Link
@@ -104,26 +103,48 @@ class Link
 public:
     void reset()
     {
-        timeout = -1us;
+        to_fwd_read_timeout = -1us;
         from_fwd.reset();
         to_fwd.reset();
     }
 
-    void set_timeout(const struct timeval &timeout)
+    void set_to_fwd_read_timeout(const struct timeval &timeout)
     {
         if (timerisset(&timeout))
         {
-            this->timeout = timeout.tv_sec * 1s + timeout.tv_usec * 1us;
+            to_fwd_read_timeout = timeout.tv_sec * 1s + timeout.tv_usec * 1us;
         }
         else
         {
             // setsockopt uses 0 to block
-            this->timeout = -1us;
+            to_fwd_read_timeout = -1us;
         }
     }
 
+    ssize_t from_fwd_write(const void *buf, size_t len)
+    {
+        return from_fwd.write(buf, len, -1, -1us);
+    }
+
+    ssize_t from_fwd_read(void *buf, size_t len,
+                          const std::chrono::microseconds &timeout)
+    {
+        return from_fwd.read(buf, len, timeout);
+    }
+
+    ssize_t to_fwd_write(const void *buf, size_t len,
+                         ssize_t hwm, const std::chrono::microseconds &timeout)
+    {
+        return to_fwd.write(buf, len, hwm, timeout);
+    }
+
+    ssize_t to_fwd_read(void *buf, size_t len)
+    {
+        return to_fwd.read(buf, len, to_fwd_read_timeout);
+    }
+
 private:
-    std::chrono::microseconds timeout = -1us;
+    std::chrono::microseconds to_fwd_read_timeout = -1us;
     Queue<std::chrono::microseconds> from_fwd, to_fwd;
 };
 
@@ -150,7 +171,7 @@ int mem_socket(int, int, int)
 
 int mem_connect(int sockfd, const struct sockaddr*, socklen_t)
 {
-    if (sockfd > SOCKET_DOWN)
+    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
     {
         errno = EBADF;
         return -1;
@@ -162,7 +183,7 @@ int mem_connect(int sockfd, const struct sockaddr*, socklen_t)
 int mem_setsockopt(int sockfd, int level, int optname,
                    const void* optval, socklen_t optlen)
 {
-    if (sockfd > SOCKET_DOWN)
+    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
     {
         errno = EBADF;
         return -1;
@@ -186,25 +207,42 @@ int mem_setsockopt(int sockfd, int level, int optname,
         return -1;
     }
 
-    links[sockfd].set_timeout(*static_cast<const struct timeval*>(optval));
+    links[sockfd].set_to_fwd_read_timeout(
+        *static_cast<const struct timeval*>(optval));
 
     return 0;
 }
 
-ssize_t mem_send(int /*sockfd*/, const void * /*buf*/, size_t /*len*/, int /*flags*/)
+ssize_t mem_send(int sockfd, const void *buf, size_t len, int /*flags*/)
 {
-    // TODO
-    return 0;
+    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    {
+        errno = EBADF;
+        return -1;
+    }
+
+    return links[sockfd].from_fwd_write(buf, len);
 }
 
-ssize_t mem_recv(int /*sockfd*/, void * /*buf*/, size_t /*len*/, int /*flags*/)
+ssize_t mem_recv(int sockfd, void *buf, size_t len, int /*flags*/)
 {
-    // TODO
-    return 0;
+    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    {
+        errno = EBADF;
+        return -1;
+    }
+
+    return links[sockfd].to_fwd_read(buf, len);
 }
 
 int mem_shutdown(int sockfd, int)
 {
+    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    {
+        errno = EBADF;
+        return -1;
+    }
+
     if (sockfd == SOCKET_DOWN)
     {
         next_socket = 0;
