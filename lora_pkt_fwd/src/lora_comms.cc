@@ -10,6 +10,7 @@
 #include <chrono>
 #include <mutex>
 #include <condition_variable>
+#include <exception>
 
 #include "lora_comms.h"
 
@@ -155,10 +156,12 @@ private:
 
 static int next_socket;
 static Link links[2];
-static int exit_status;
 static sighandler_t signal_handler;
 
-extern int lora_pkt_fwd_main();
+struct ExitException : public std::exception
+{
+    int status;
+};
 
 std::chrono::microseconds to_microseconds(const struct timeval *tv)
 {
@@ -166,6 +169,8 @@ std::chrono::microseconds to_microseconds(const struct timeval *tv)
 }
 
 extern "C" {
+
+extern int lora_pkt_fwd_main();
 
 int mem_socket(int, int, int)
 {
@@ -266,7 +271,9 @@ int mem_shutdown(int sockfd, int)
 
 void mem_exit(int status)
 {
-    exit_status = status;
+    ExitException e;
+    e.status = status;
+    throw e;
 }
 
 void mem_sigaction(int signum,
@@ -282,8 +289,15 @@ void mem_sigaction(int signum,
 int start()
 {
     next_socket = 0;
-    lora_pkt_fwd_main();
-    return exit_status;
+    try
+    {
+        lora_pkt_fwd_main();
+    }
+    catch (ExitException &e)
+    {
+        return e.status;
+    }
+    return EXIT_SUCCESS;
 }
 
 void stop()

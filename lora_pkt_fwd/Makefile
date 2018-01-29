@@ -4,7 +4,7 @@ APP_NAME := lora_pkt_fwd
 
 ### Environment constants 
 
-LGW_PATH ?= ../../lora_gateway/libloragw
+LGW_PATH ?= ../../lora_gateway_shared/libloragw
 ARCH ?=
 CROSS_COMPILE ?=
 
@@ -48,11 +48,11 @@ LGW_INC += $(LGW_PATH)/inc/loragw_gps.h
 
 ### Linking options
 
-LIBS := -lloragw -lrt -lpthread -lm
+LIBS := -lloragw -lrt -lpthread -lm -lstdc++
 
 ### General build targets
 
-all: liblora_comms.so
+all: lib$(APP_NAME).so
 
 clean:
 	rm -f $(OBJDIR)/*.o
@@ -74,10 +74,7 @@ $(OBJDIR)/%.o: src/%.cc $(INCLUDES) | $(OBJDIR)
 $(OBJDIR)/$(APP_NAME).o: src/$(APP_NAME).c $(LGW_INC) $(INCLUDES) | $(OBJDIR)
 	$(CC) -c $(CFLAGS) $(VFLAG) -I$(LGW_PATH)/inc $< -o $@
 
-lib$(APP_NAME).so: $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.so $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o
-	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o -shared -o $@ $(LIBS)
-
-liblora_comms.so: $(OBJDIR)/lora_comms.o lib$(APP_NAME).so
-	$(CC) $< -shared -o $@
+lib$(APP_NAME).so: $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.so $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/lora_comms.o
+	$(CC) -L$(LGW_PATH) -Wl,-rpath,\$$ORIGIN/$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o $(OBJDIR)/lora_comms.o -shared -o $@ $(LIBS)
 
 ### EOF
