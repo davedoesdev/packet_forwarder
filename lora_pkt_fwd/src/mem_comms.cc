@@ -1,6 +1,5 @@
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -12,10 +11,9 @@
 #include <mutex>
 #include <condition_variable>
 
-using namespace std::chrono_literals;
+#include "lora_comms.h"
 
-const int SOCKET_UP = 0,
-          SOCKET_DOWN = 1;
+using namespace std::chrono_literals;
 
 template<typename Duration>
 class Queue
@@ -31,8 +29,8 @@ public:
         size = 0;
     }
 
-    ssize_t write(const void *buf, size_t len,
-                  ssize_t hwm, const Duration &timeout)
+    ssize_t send(const void *buf, size_t len,
+                 ssize_t hwm, const Duration &timeout)
     {
         std::unique_lock<std::mutex> lock(m);
 
@@ -61,7 +59,7 @@ public:
         return 0;
     }
 
-    ssize_t read(void *buf, size_t len, const Duration &timeout)
+    ssize_t recv(void *buf, size_t len, const Duration &timeout)
     {
         std::unique_lock<std::mutex> lock(m);
 
@@ -103,65 +101,55 @@ class Link
 public:
     void reset()
     {
-        from_fwd_write_hwm = -1;
-        from_fwd_write_timeout = -1us;
-        to_fwd_read_timeout = -1us;
+        from_fwd_send_hwm = -1;
+        from_fwd_send_timeout = -1us;
+        to_fwd_recv_timeout = -1us;
         from_fwd.reset();
         to_fwd.reset();
     }
 
-    // TODO: Can we split up from_fwd and to_fwd ops?
-
-    void set_from_fwd_write_hwm(const ssize_t hwm)
+    void set_from_fwd_send_hwm(const ssize_t hwm)
     {
-        from_fwd_write_hwm = hwm;
+        from_fwd_send_hwm = hwm;
     }
 
-    void set_from_fwd_write_timeout(const std::chrono::microseconds &timeout)
+    void set_from_fwd_send_timeout(const std::chrono::microseconds &timeout)
     {
-        from_fwd_write_timeout = timeout;
+        from_fwd_send_timeout = timeout;
     }
 
-    void set_to_fwd_read_timeout(const struct timeval &timeout)
+    void set_to_fwd_recv_timeout(const std::chrono::microseconds &timeout)
     {
-        if (timerisset(&timeout))
-        {
-            to_fwd_read_timeout = timeout.tv_sec * 1s + timeout.tv_usec * 1us;
-        }
-        else
-        {
-            // setsockopt uses 0 to block
-            to_fwd_read_timeout = -1us;
-        }
+        to_fwd_recv_timeout = timeout;
+    }
+    
+    ssize_t from_fwd_send(const void *buf, size_t len)
+    {
+        return from_fwd.send(buf, len,
+                             from_fwd_send_hwm, from_fwd_send_timeout);
     }
 
-    ssize_t from_fwd_write(const void *buf, size_t len)
-    {
-        return from_fwd.write(buf, len,
-                              from_fwd_write_hwm, from_fwd_write_timeout);
-    }
-
-    ssize_t from_fwd_read(void *buf, size_t len,
+    ssize_t from_fwd_recv(void *buf, size_t len,
                           const std::chrono::microseconds &timeout)
     {
-        return from_fwd.read(buf, len, timeout);
+        return from_fwd.recv(buf, len, timeout);
     }
 
-    ssize_t to_fwd_write(const void *buf, size_t len,
-                         ssize_t hwm, const std::chrono::microseconds &timeout)
+    ssize_t to_fwd_send(const void *buf, size_t len,
+                        ssize_t hwm, const std::chrono::microseconds &timeout)
     {
-        return to_fwd.write(buf, len, hwm, timeout);
+        return to_fwd.send(buf, len, hwm, timeout);
     }
 
-    ssize_t to_fwd_read(void *buf, size_t len)
+    ssize_t to_fwd_recv(void *buf, size_t len)
     {
-        return to_fwd.read(buf, len, to_fwd_read_timeout);
+        return to_fwd.recv(buf, len, to_fwd_recv_timeout);
     }
 
 private:
-    ssize_t from_fwd_write_hwm = -1;
-    std::chrono::microseconds from_fwd_write_timeout = -1us;
-    std::chrono::microseconds to_fwd_read_timeout = -1us;
+    ssize_t from_fwd_send_hwm = -1;
+    std::chrono::microseconds from_fwd_send_timeout = -1us;
+    std::chrono::microseconds to_fwd_recv_timeout = -1us;
     Queue<std::chrono::microseconds> from_fwd, to_fwd;
 };
 
@@ -172,11 +160,16 @@ static sighandler_t signal_handler;
 
 extern int lora_pkt_fwd_main();
 
+std::chrono::microseconds to_microseconds(const struct timeval *tv)
+{
+    return tv ? (tv->tv_sec * 1s + tv->tv_usec * 1us) : -1us;
+}
+
 extern "C" {
 
 int mem_socket(int, int, int)
 {
-    if (next_socket > SOCKET_DOWN)
+    if (next_socket > downlink)
     {
         errno = EMFILE;
         return -1;
@@ -188,7 +181,7 @@ int mem_socket(int, int, int)
 
 int mem_connect(int sockfd, const struct sockaddr*, socklen_t)
 {
-    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    if ((sockfd < uplink) || (sockfd > downlink))
     {
         errno = EBADF;
         return -1;
@@ -200,7 +193,7 @@ int mem_connect(int sockfd, const struct sockaddr*, socklen_t)
 int mem_setsockopt(int sockfd, int level, int optname,
                    const void* optval, socklen_t optlen)
 {
-    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    if ((sockfd < uplink) || (sockfd > downlink))
     {
         errno = EBADF;
         return -1;
@@ -224,43 +217,46 @@ int mem_setsockopt(int sockfd, int level, int optname,
         return -1;
     }
 
-    links[sockfd].set_to_fwd_read_timeout(
-        *static_cast<const struct timeval*>(optval));
+    auto ptimeout = static_cast<const struct timeval*>(optval);
+
+    links[sockfd].set_to_fwd_recv_timeout(
+        // setsockopt uses 0 to block
+        to_microseconds(timerisset(ptimeout) ? ptimeout : nullptr));
 
     return 0;
 }
 
 ssize_t mem_send(int sockfd, const void *buf, size_t len, int /*flags*/)
 {
-    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    if ((sockfd < uplink) || (sockfd > downlink))
     {
         errno = EBADF;
         return -1;
     }
 
-    return links[sockfd].from_fwd_write(buf, len);
+    return links[sockfd].from_fwd_send(buf, len);
 }
 
 ssize_t mem_recv(int sockfd, void *buf, size_t len, int /*flags*/)
 {
-    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    if ((sockfd < uplink) || (sockfd > downlink))
     {
         errno = EBADF;
         return -1;
     }
 
-    return links[sockfd].to_fwd_read(buf, len);
+    return links[sockfd].to_fwd_recv(buf, len);
 }
 
 int mem_shutdown(int sockfd, int)
 {
-    if ((sockfd < 0) || (sockfd > SOCKET_DOWN))
+    if ((sockfd < uplink) || (sockfd > downlink))
     {
         errno = EBADF;
         return -1;
     }
 
-    if (sockfd == SOCKET_DOWN)
+    if (sockfd == downlink)
     {
         next_socket = 0;
     }
@@ -295,18 +291,33 @@ void stop()
     signal_handler(SIGTERM);
 }
 
-// TODO
-// we'll have two sockets, up first then down
-// each should have a read and write queue
-// then export functions to read and write from each
-/*
-read_from_uplink_queue
-write_to_uplink_queue
-set timeout, hwm on from_fwd
+ssize_t recv_from(int link,
+                  void *buf, size_t len,
+                  const struct timeval *timeout)
+{
+    return links[link].from_fwd_recv(buf, len, to_microseconds(timeout));
+}
 
-write_to_downlink_queue
-read_from_downlink_queue
-set timeout, hwm on from_fwd
-*/
+ssize_t send_to(int link,
+                const void *buf, size_t len,
+                ssize_t hwm, const struct timeval *timeout)
+{
+    return links[link].to_fwd_send(buf, len, hwm, to_microseconds(timeout));
+}
+
+void set_gw_send_hwm(int link, const ssize_t hwm)
+{
+    links[link].set_from_fwd_send_hwm(hwm);
+}
+
+void set_gw_send_timeout(int link, const struct timeval *timeout)
+{
+    links[link].set_from_fwd_send_timeout(to_microseconds(timeout));
+}
+
+void set_gw_recv_timeout(int link, const struct timeval *timeout)
+{
+    links[link].set_to_fwd_recv_timeout(to_microseconds(timeout));
+}
 
 }
