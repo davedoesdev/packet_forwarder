@@ -46,7 +46,8 @@ public:
                 // timeout < 0 means block
                 cv.wait(lock, pred);
             }
-            else if (!cv.wait_for(lock, timeout, pred))
+            else if ((timeout == Duration::zero()) ||
+                     !cv.wait_for(lock, timeout, pred))
             {
                 errno = EAGAIN;
                 return -1;
@@ -56,8 +57,6 @@ public:
         auto bytes = static_cast<const uint8_t*>(buf);
         q.emplace(bytes, &bytes[len]);
         size += len;
-
-        // TODO: what about dropping if queue too big?
 
         return 0;
     }
@@ -75,7 +74,8 @@ public:
                 // timeout < 0 means block
                 cv.wait(lock, pred);
             }
-            else if (!cv.wait_for(lock, timeout, pred))
+            else if ((timeout == Duration::zero()) ||
+                     !cv.wait_for(lock, timeout, pred))
             {
                 errno = EAGAIN;
                 return -1;
@@ -103,9 +103,23 @@ class Link
 public:
     void reset()
     {
+        from_fwd_write_hwm = -1;
+        from_fwd_write_timeout = -1us;
         to_fwd_read_timeout = -1us;
         from_fwd.reset();
         to_fwd.reset();
+    }
+
+    // TODO: Can we split up from_fwd and to_fwd ops?
+
+    void set_from_fwd_write_hwm(const ssize_t hwm)
+    {
+        from_fwd_write_hwm = hwm;
+    }
+
+    void set_from_fwd_write_timeout(const std::chrono::microseconds &timeout)
+    {
+        from_fwd_write_timeout = timeout;
     }
 
     void set_to_fwd_read_timeout(const struct timeval &timeout)
@@ -123,7 +137,8 @@ public:
 
     ssize_t from_fwd_write(const void *buf, size_t len)
     {
-        return from_fwd.write(buf, len, -1, -1us);
+        return from_fwd.write(buf, len,
+                              from_fwd_write_hwm, from_fwd_write_timeout);
     }
 
     ssize_t from_fwd_read(void *buf, size_t len,
@@ -144,6 +159,8 @@ public:
     }
 
 private:
+    ssize_t from_fwd_write_hwm = -1;
+    std::chrono::microseconds from_fwd_write_timeout = -1us;
     std::chrono::microseconds to_fwd_read_timeout = -1us;
     Queue<std::chrono::microseconds> from_fwd, to_fwd;
 };
@@ -285,9 +302,11 @@ void stop()
 /*
 read_from_uplink_queue
 write_to_uplink_queue
+set timeout, hwm on from_fwd
 
 write_to_downlink_queue
 read_from_downlink_queue
+set timeout, hwm on from_fwd
 */
 
 }
