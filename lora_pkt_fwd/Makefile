@@ -77,7 +77,7 @@ $(OBJDIR)/$(APP_NAME).o: src/$(APP_NAME).c $(LGW_INC) $(INCLUDES) | $(OBJDIR)
 lib$(APP_NAME).so: $(OBJDIR)/$(APP_NAME).o $(LGW_PATH)/libloragw.so $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o
 	$(CC) -L$(LGW_PATH) $< $(OBJDIR)/parson.o $(OBJDIR)/base64.o $(OBJDIR)/jitqueue.o $(OBJDIR)/timersync.o -shared -o $@ $(LIBS)
 
-liblora_comms.so: $(OBJDIR)/mem_comms.o lib$(APP_NAME).so
+liblora_comms.so: $(OBJDIR)/lora_comms.o lib$(APP_NAME).so
 	$(CC) $< -shared -o $@
 
 ### EOF
