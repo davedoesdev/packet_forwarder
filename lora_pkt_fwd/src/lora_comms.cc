@@ -3,6 +3,8 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <queue>
@@ -11,6 +13,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <exception>
+#include <string>
 
 #include "lora_comms.h"
 
@@ -157,6 +160,7 @@ private:
 static int next_socket;
 static Link links[2];
 static sighandler_t signal_handler;
+static std::string cfg_prefix;
 
 struct ExitException : public std::exception
 {
@@ -286,8 +290,28 @@ void mem_sigaction(int signum,
     }
 }
 
-int start()
+int mem_access(const char *pathname, int mode)
 {
+    return access((cfg_prefix + pathname).c_str(), mode);
+}
+
+FILE *mem_fopen(const char *pathname, const char *mode)
+{
+    return fopen((cfg_prefix + pathname).c_str(), mode);
+}
+
+int start(const char *cfg_dir)
+{
+    if (cfg_dir)
+    {
+        cfg_prefix = cfg_dir;
+        cfg_prefix += "/";
+    }
+    else
+    {
+        cfg_prefix = "";
+    }
+
     next_socket = 0;
     try
     {

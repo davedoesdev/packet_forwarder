@@ -32,7 +32,9 @@ CFLAGS := $(CCFLAGS) -std=c99 \
           -Drecv=mem_recv \
           -Dshutdown=mem_shutdown \
           -Dexit=mem_exit \
-          -Dsigaction=mem_sigaction
+          -Dsigaction=mem_sigaction \
+          -Daccess=mem_access \
+          -Dfopen=mem_fopen
 VFLAG := -D VERSION_STRING="\"$(RELEASE_VERSION)\""
 
 ### Constants for Lora concentrator HAL library

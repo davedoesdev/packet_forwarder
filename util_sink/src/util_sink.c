@@ -33,6 +33,8 @@ Maintainer: Sylvain Miermont
 #include <errno.h>      /* error messages */
 #include <signal.h>     /* sigaction */
 
+#include <pthread.h>
+
 #include <lora_comms.h>
 
 /* -------------------------------------------------------------------------- */
@@ -74,7 +76,7 @@ int main(int argc, char **argv)
     // test ^C
 
     MSG("INFO: util_sink listening\n");
-    return start();
+    return start(argc > 1 ? argv[1] : NULL);
 /*
     while (1) {
         byte_nb = recvfrom(sock, databuf, sizeof databuf, 0, (struct sockaddr *)&dist_addr, &addr_len);

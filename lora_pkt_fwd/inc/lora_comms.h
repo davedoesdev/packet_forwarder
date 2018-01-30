@@ -14,8 +14,9 @@ extern "C" {
 #endif
 
 /* Start the packet forwarder.
-   This won't return until stop() is called on a separate thread. */
-int start();
+   This won't return until stop() is called on a separate thread.
+   Null configuration file directory means current directory. */
+int start(const char *cfg_dir);
 
 /* Stop the packet forwarder. */
 void stop();
