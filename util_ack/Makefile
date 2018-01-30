@@ -7,7 +7,7 @@ APP_NAME := util_ack
 CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
 
-CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I.
+CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I. -I../lora_pkt_fwd/inc
 
 OBJDIR = obj
 
@@ -28,6 +28,6 @@ $(OBJDIR)/%.o: src/%.c | $(OBJDIR)
 	$(CC) -c $(CFLAGS) $< -o $@
 
 $(APP_NAME): $(OBJDIR)/$(APP_NAME).o
-	$(CC) $< -o $@
+	$(CC) $< -o $@ -L../lora_pkt_fwd -Wl,-rpath,\$$ORIGIN/../lora_pkt_fwd -llora_pkt_fwd -lpthread
 
 ### EOF

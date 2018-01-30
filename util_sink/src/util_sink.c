@@ -33,7 +33,7 @@ Maintainer: Sylvain Miermont
 #include <errno.h>      /* error messages */
 #include <signal.h>     /* sigaction */
 
-#include <pthread.h>
+#include <pthread.h>    /* pthread_create, pthread_join */
 
 #include <lora_comms.h>
 
@@ -50,27 +50,29 @@ Maintainer: Sylvain Miermont
 
 #define UNUSED(x) (void)(x)
 
-static void sig_handler(int sigio)
+static void sig_handler(int signum)
 {
-    UNUSED(sigio);
+    UNUSED(signum);
     stop();
 }
 
 static void *thread_sink(void *arg)
 {
-   /* variables for receiving packets */
+    int link = (int)(intptr_t)arg;
+
+    /* variables for receiving packets */
     uint8_t databuf[4096];
     int byte_nb;
-    int link = (intptr_t) arg;
 
     while (1)
     {
         byte_nb = recv_from(link, databuf, sizeof databuf, NULL);
-        if (byte_nb == -1) {
-            MSG("ERROR: link %d returned %s\n", link, strerror(errno));
+        if (byte_nb == -1)
+        {
+            MSG("ERROR: link %d recv_from returned %s\n", link, strerror(errno));
             return NULL;
         }
-        printf("Got packet %i bytes long\n", byte_nb);
+        printf("Link %d got packet %d bytes long\n", link, byte_nb);
     }
 }
 
