@@ -56,23 +56,22 @@ static void sig_handler(int sigio)
     stop();
 }
 
-static void *thread_sink(void *link)
+static void *thread_sink(void *arg)
 {
    /* variables for receiving packets */
     uint8_t databuf[4096];
     int byte_nb;
+    int link = (intptr_t) arg;
 
     while (1)
     {
-        byte_nb = recv_from((intptr_t)link, databuf, sizeof databuf, NULL);
+        byte_nb = recv_from(link, databuf, sizeof databuf, NULL);
         if (byte_nb == -1) {
-            MSG("ERROR: recv_from returned %s\n", strerror(errno));
+            MSG("ERROR: link %d returned %s\n", link, strerror(errno));
             return NULL;
         }
         printf("Got packet %i bytes long\n", byte_nb);
     }
-
-    return NULL;
 }
 
 int main(int argc, char **argv)
@@ -101,10 +100,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // test ^C
-    // do the threads stop?
-    // can lora_comms help in stopping the threads?
-
     MSG("INFO: util_sink listening\n");
-    return start(argc > 1 ? argv[1] : NULL);
+    int r = start(argc > 1 ? argv[1] : NULL);
+
+    pthread_join(thrid_uplink, NULL);
+    pthread_join(thrid_downlink, NULL);
+
+    return r;
 }

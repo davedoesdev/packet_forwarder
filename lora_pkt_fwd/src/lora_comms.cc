@@ -28,9 +28,18 @@ public:
 
     void reset()
     {
+        closed = false;
+    }
+
+    void close()
+    {
+        std::unique_lock<std::mutex> lock(m);
         queue_t empty;
         std::swap(q, empty);
         size = 0;
+        closed = true;
+        send_cv.notify_all();
+        recv_cv.notify_all();
     }
 
     ssize_t send(const void *buf, size_t len,
@@ -38,20 +47,35 @@ public:
     {
         std::unique_lock<std::mutex> lock(m);
 
+        if (closed)
+        {
+            errno = EBADF;
+            return -1;
+        }
+
         if ((hwm >= 0) && (size > hwm))
         {
-            // wait for until buffered data size <= hwm
-            auto pred = [this, hwm] { return this->size <= hwm; };
+            // wait until buffered data size <= hwm
+            auto pred = [this, hwm]
+            {
+                return closed || (this->size <= hwm);
+            };
 
             if (timeout < Duration::zero())
             {
                 // timeout < 0 means block
-                cv.wait(lock, pred);
+                send_cv.wait(lock, pred);
             }
             else if ((timeout == Duration::zero()) ||
-                     !cv.wait_for(lock, timeout, pred))
+                     !send_cv.wait_for(lock, timeout, pred))
             {
                 errno = EAGAIN;
+                return -1;
+            }
+
+            if (closed)
+            {
+                errno = EBADF;
                 return -1;
             }
         }
@@ -59,6 +83,7 @@ public:
         auto bytes = static_cast<const uint8_t*>(buf);
         q.emplace(bytes, &bytes[len]);
         size += len;
+        recv_cv.notify_all();
 
         return 0;
     }
@@ -67,19 +92,34 @@ public:
     {
         std::unique_lock<std::mutex> lock(m);
 
+        if (closed)
+        {
+            errno = EBADF;
+            return -1;
+        }
+
         if (q.empty())
         {
-            auto pred = [this] { return !this->q.empty(); };
+            auto pred = [this]
+            {
+                return closed || !this->q.empty();
+            };
 
             if (timeout < Duration::zero())
             {
                 // timeout < 0 means block
-                cv.wait(lock, pred);
+                recv_cv.wait(lock, pred);
             }
             else if ((timeout == Duration::zero()) ||
-                     !cv.wait_for(lock, timeout, pred))
+                     !recv_cv.wait_for(lock, timeout, pred))
             {
                 errno = EAGAIN;
+                return -1;
+            }
+
+            if (closed)
+            {
+                errno = EBADF;
                 return -1;
             }
         }
@@ -89,15 +129,17 @@ public:
         memcpy(buf, el.data(), r);
         q.pop();
         size -= el.size();
+        send_cv.notify_all();
 
         return r;
     }
 
 private:
     std::mutex m;
-    std::condition_variable cv;
+    std::condition_variable send_cv, recv_cv;
     queue_t q;
     ssize_t size = 0;
+    bool closed = false;
 };
 
 class Link
@@ -110,6 +152,12 @@ public:
         to_fwd_recv_timeout = -1us;
         from_fwd.reset();
         to_fwd.reset();
+    }
+
+    void close()
+    {
+        from_fwd.close();
+        to_fwd.close();
     }
 
     void set_from_fwd_send_hwm(const ssize_t hwm)
@@ -302,6 +350,11 @@ FILE *mem_fopen(const char *pathname, const char *mode)
 
 int start(const char *cfg_dir)
 {
+    int r = EXIT_SUCCESS;
+
+    next_socket = 0;
+    signal_handler = nullptr;
+
     if (cfg_dir)
     {
         cfg_prefix = cfg_dir;
@@ -312,17 +365,19 @@ int start(const char *cfg_dir)
         cfg_prefix = "";
     }
 
-    next_socket = 0;
-    signal_handler = nullptr;
     try
     {
         lora_pkt_fwd_main();
     }
     catch (ExitException &e)
     {
-        return e.status;
+        r = e.status;
     }
-    return EXIT_SUCCESS;
+
+    links[uplink].close();
+    links[downlink].close();
+
+    return r;
 }
 
 void stop()
@@ -331,6 +386,12 @@ void stop()
     {
         signal_handler(SIGTERM);
     }
+}
+
+void reset()
+{
+    links[uplink].reset();
+    links[downlink].reset();
 }
 
 ssize_t recv_from(int link,
