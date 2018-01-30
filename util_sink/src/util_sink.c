@@ -56,6 +56,25 @@ static void sig_handler(int sigio)
     stop();
 }
 
+static void *thread_sink(void *link)
+{
+   /* variables for receiving packets */
+    uint8_t databuf[4096];
+    int byte_nb;
+
+    while (1)
+    {
+        byte_nb = recv_from((intptr_t)link, databuf, sizeof databuf, NULL);
+        if (byte_nb == -1) {
+            MSG("ERROR: recv_from returned %s\n", strerror(errno));
+            return NULL;
+        }
+        printf("Got packet %i bytes long\n", byte_nb);
+    }
+
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
     struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
@@ -68,24 +87,24 @@ int main(int argc, char **argv)
     sigaction(SIGINT, &sigact, NULL); /* Ctrl-C */
     sigaction(SIGTERM, &sigact, NULL); /* default "kill" command */
 
-    /* variables for receiving packets */
-    uint8_t databuf[4096];
-    int byte_nb;
+    pthread_t thrid_uplink, thrid_downlink;
 
-    // start threads listening on uplink and downlink
+    if (pthread_create(&thrid_uplink, NULL, thread_sink, (void*)(intptr_t)uplink) != 0)
+    {
+        MSG("ERROR: failed to create uplink thread\n");
+        return 1;
+    }
+
+    if (pthread_create(&thrid_downlink, NULL, thread_sink, (void*)(intptr_t)downlink) != 0)
+    {
+        MSG("ERROR: failed to create downlink thread\n");
+        return 1;
+    }
+
     // test ^C
+    // do the threads stop?
+    // can lora_comms help in stopping the threads?
 
     MSG("INFO: util_sink listening\n");
     return start(argc > 1 ? argv[1] : NULL);
-/*
-    while (1) {
-        byte_nb = recvfrom(sock, databuf, sizeof databuf, 0, (struct sockaddr *)&dist_addr, &addr_len);
-        if (byte_nb == -1) {
-            MSG("ERROR: recvfrom returned %s \n", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        getnameinfo((struct sockaddr *)&dist_addr, addr_len, host_name, sizeof host_name, port_name, sizeof port_name, NI_NUMERICHOST);
-        printf("Got packet from host %s port %s, %i bytes long\n", host_name, port_name, byte_nb);
-    }
-*/
 }

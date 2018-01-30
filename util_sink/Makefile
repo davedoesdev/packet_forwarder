@@ -28,6 +28,6 @@ $(OBJDIR)/%.o: src/%.c | $(OBJDIR)
 	$(CC) -c $(CFLAGS) $< -o $@
 
 $(APP_NAME): $(OBJDIR)/$(APP_NAME).o ../lora_pkt_fwd/liblora_pkt_fwd.so
-	$(CC) $< -o $@ -L../lora_pkt_fwd -Wl,-rpath,\$$ORIGIN/../lora_pkt_fwd -llora_pkt_fwd
+	$(CC) $< -o $@ -L../lora_pkt_fwd -Wl,-rpath,\$$ORIGIN/../lora_pkt_fwd -llora_pkt_fwd -lpthread
 
 ### EOF

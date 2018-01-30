@@ -313,6 +313,7 @@ int start(const char *cfg_dir)
     }
 
     next_socket = 0;
+    signal_handler = nullptr;
     try
     {
         lora_pkt_fwd_main();
@@ -326,7 +327,10 @@ int start(const char *cfg_dir)
 
 void stop()
 {
-    signal_handler(SIGTERM);
+    if (signal_handler)
+    {
+        signal_handler(SIGTERM);
+    }
 }
 
 ssize_t recv_from(int link,
