@@ -7,7 +7,7 @@ APP_NAME := util_tx_test
 CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
 
-CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I.
+CFLAGS := -O2 -Wall -Wextra -std=c99 -Iinc -I. -I../lora_pkt_fwd/inc
 
 OBJDIR = obj
 INCLUDES = $(wildcard inc/*.h)
@@ -30,7 +30,7 @@ $(OBJDIR)/%.o: src/%.c $(INCLUDES) | $(OBJDIR)
 
 ### Main program assembly
 
-$(APP_NAME): $(OBJDIR)/$(APP_NAME).o  $(OBJDIR)/base64.o
-	$(CC) $< $(OBJDIR)/base64.o -o $@
+$(APP_NAME): $(OBJDIR)/$(APP_NAME).o $(OBJDIR)/base64.o
+	$(CC) $^ -o $@ -L../lora_pkt_fwd -Wl,-rpath,\$$ORIGIN/../lora_pkt_fwd -llora_pkt_fwd -lpthread
 
 ### EOF

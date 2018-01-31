@@ -34,12 +34,12 @@ Maintainer: Sylvain Miermont
 #include <stdlib.h>     /* exit codes */
 #include <errno.h>      /* error messages */
 
-#include <sys/socket.h> /* socket specific definitions */
-#include <netinet/in.h> /* INET constants and stuff */
-#include <arpa/inet.h>  /* IP address conversion stuff */
-#include <netdb.h>      /* gai_strerror */
+#include <arpa/inet.h>  /* ntohl */
+#include <pthread.h>    /* pthread_create, pthread_join */
 
-#include "base64.h"
+#include <base64.h>     /* bin_to_b64 */
+
+#include <lora_comms.h>
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -57,14 +57,7 @@ Maintainer: Sylvain Miermont
 #define PKT_PULL_DATA   2
 #define PKT_PULL_RESP   3
 #define PKT_PULL_ACK    4
-
-/* -------------------------------------------------------------------------- */
-/* --- PRIVATE VARIABLES (GLOBAL) ------------------------------------------- */
-
-/* signal handling variables */
-struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
-static int exit_sig = 0; /* 1 -> application terminates cleanly (shut down hardware, close open files, etc) */
-static int quit_sig = 0; /* 1 -> application terminates without shutting down the hardware */
+#define PKT_TX_ACK      5
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DECLARATION ---------------------------------------- */
@@ -76,12 +69,24 @@ void usage (void);
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
 
-static void sig_handler(int sigio) {
-    if (sigio == SIGQUIT) {
-        quit_sig = 1;;
-    } else if ((sigio == SIGINT) || (sigio == SIGTERM)) {
-        exit_sig = 1;
-    }
+#define UNUSED(x) (void)(x)
+
+static void sig_handler(int signum)
+{
+    UNUSED(signum);
+    stop();
+}
+
+static void *thread_fwd(void *arg)
+{
+    return (void*)(intptr_t)start((char*)arg);
+}
+
+static int wait_for_fwd(pthread_t thrid_fwd)
+{
+    void *r = (void*)(intptr_t)EXIT_FAILURE;
+    pthread_join(thrid_fwd, &r);
+    return (int)(intptr_t)r;
 }
 
 /* describe command line options */
@@ -89,7 +94,7 @@ void usage(void) {
     MSG("Usage: util_tx_test {options}\n");
     MSG("Available options:\n");
     MSG(" -h print this help\n");
-    MSG(" -n <int or service> port number for gateway link\n");
+    MSG(" -c <str> configuration directory\n");
     MSG(" -f <float> target frequency in MHz\n");
     MSG(" -m <str> Modulation type ['LORA, 'FSK']\n");
     MSG(" -s <int> Spreading Factor [7:12]\n");
@@ -134,19 +139,9 @@ int main(int argc, char **argv)
     /* PER payload variables */
     uint8_t id = 0;
 
-    /* server socket creation */
-    int sock; /* socket file descriptor */
-    struct addrinfo hints;
-    struct addrinfo *result; /* store result of getaddrinfo */
-    struct addrinfo *q; /* pointer to move into *result data */
-    char serv_port[8] = "1680";
-    char host_name[64];
-    char port_name[64];
-
     /* variables for receiving and sending packets */
-    struct sockaddr_storage dist_addr;
-    socklen_t addr_len = sizeof dist_addr;
     uint8_t databuf[500];
+    uint8_t databuf2[500];
     int buff_index;
     int byte_nb;
 
@@ -155,22 +150,19 @@ int main(int argc, char **argv)
     uint32_t raw_mac_l; /* Least Significant Nibble, network order */
     uint64_t gw_mac; /* MAC address of the client (gateway) */
 
-    /* prepare hints to open network sockets */
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC; /* should handle IP v4 or v6 automatically */
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_flags = AI_PASSIVE; /* will assign local IP automatically */
+    /* variable for configuration directory */
+    char cfg_dir[1024] = {0};
 
     /* parse command line options */
-    while ((i = getopt (argc, argv, "hn:f:m:s:b:d:r:p:z:t:x:v:i")) != -1) {
+    while ((i = getopt (argc, argv, "hc:f:m:s:b:d:r:p:z:t:x:v:i")) != -1) {
         switch (i) {
             case 'h':
                 usage();
                 return EXIT_FAILURE;
                 break;
 
-            case 'n': /* -n <int or service> port number for gateway link */
-                strncpy(serv_port, optarg, sizeof serv_port);
+            case 'c': /* -c <str> configuration directory */
+                strncpy(cfg_dir, optarg, sizeof cfg_dir);
                 break;
 
             case 'f': /* -f <float> target frequency in MHz */
@@ -282,35 +274,8 @@ int main(int argc, char **argv)
         }
     }
 
-    /* compose local address (auto-complete a structure for socket) */
-    i = getaddrinfo(NULL, serv_port, &hints, &result);
-    if (i != 0) {
-        MSG("ERROR: getaddrinfo returned %s\n", gai_strerror(i));
-        exit(EXIT_FAILURE);
-    }
-
-    /* try to open socket and bind to it */
-    for (q=result; q!=NULL; q=q->ai_next) {
-        sock = socket(q->ai_family, q->ai_socktype,q->ai_protocol);
-        if (sock == -1) {
-            continue; /* socket failed, try next field */
-        } else {
-            i = bind(sock, q->ai_addr, q->ai_addrlen);
-            if (i == -1) {
-                shutdown(sock, SHUT_RDWR);
-                continue; /* bind failed, try next field */
-            } else {
-                break; /* success, get out of loop */
-            }
-        }
-    }
-    if (q == NULL) {
-        MSG("ERROR: failed to open socket or to bind to it\n");
-        exit(EXIT_FAILURE);
-    }
-    freeaddrinfo(result);
-
     /* configure signal handling */
+    struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
     sigemptyset(&sigact.sa_mask);
     sigact.sa_flags = 0;
     sigact.sa_handler = sig_handler;
@@ -325,14 +290,23 @@ int main(int argc, char **argv)
         MSG("INFO: %i LoRa pkts @%f MHz (BW %u kHz, SF%i, %uB payload) %i dBm, %i ms between each\n", repeat, f_target, bw, sf, payload_size, pow, delay);
     }
 
+    /* start forwarder thread */
+    pthread_t thrid_fwd;
+    if (pthread_create(&thrid_fwd, NULL, thread_fwd, (void*)(cfg_dir[0] ? cfg_dir : NULL)) != 0)
+    {
+        MSG("ERROR: failed to create forwarder thread\n");
+        return EXIT_FAILURE;
+    }
+
     /* wait to receive a PULL_DATA request packet */
-    MSG("INFO: waiting to receive a PULL_DATA request on port %s\n", serv_port);
+    MSG("INFO: waiting to receive a PULL_DATA request\n");
     while (1) {
-        byte_nb = recvfrom(sock, databuf, sizeof databuf, 0, (struct sockaddr *)&dist_addr, &addr_len);
-        if ((quit_sig == 1) || (exit_sig == 1)) {
-            exit(EXIT_SUCCESS);
-        } else if (byte_nb < 0) {
-            MSG("WARNING: recvfrom returned an error\n");
+        byte_nb = recv_from(downlink, databuf, sizeof databuf, NULL);
+        if (byte_nb < 0) {
+            if (errno == EBADF) {
+                return wait_for_fwd(thrid_fwd);
+            }
+            MSG("WARNING: recv_from returned an error %s\n", strerror(errno));
         } else if ((byte_nb < 12) || (databuf[0] != PROTOCOL_VERSION) || (databuf[3] != PKT_PULL_DATA)) {
             MSG("INFO: packet received, not PULL_DATA request\n");
         } else {
@@ -346,12 +320,17 @@ int main(int argc, char **argv)
     gw_mac = ((uint64_t)ntohl(raw_mac_h) << 32) + (uint64_t)ntohl(raw_mac_l);
 
     /* display info about the sender */
-    i = getnameinfo((struct sockaddr *)&dist_addr, addr_len, host_name, sizeof host_name, port_name, sizeof port_name, NI_NUMERICHOST);
-    if (i == -1) {
-        MSG("ERROR: getnameinfo returned %s \n", gai_strerror(i));
-        exit(EXIT_FAILURE);
+    MSG("INFO: PULL_DATA request received from gateway 0x%08X%08X\n", (uint32_t)(gw_mac >> 32), (uint32_t)(gw_mac & 0xFFFFFFFF));
+
+    /* Send PULL_ACK */
+    databuf[3] = PKT_PULL_ACK;
+    byte_nb = send_to(downlink, (void*)databuf, 4, -1, NULL);
+    if (byte_nb == -1) {
+        if (errno == EBADF) {
+            return wait_for_fwd(thrid_fwd);
+        }
+        MSG("WARNING: send_to returned an error %s\n", strerror(errno));
     }
-    MSG("INFO: PULL_DATA request received from gateway 0x%08X%08X (host %s, port %s)\n", (uint32_t)(gw_mac >> 32), (uint32_t)(gw_mac & 0xFFFFFFFF), host_name, port_name);
 
     /* PKT_PULL_RESP datagrams header */
     databuf[0] = PROTOCOL_VERSION;
@@ -370,7 +349,7 @@ int main(int argc, char **argv)
         buff_index += i;
     } else {
         MSG("ERROR: snprintf failed line %u\n", (__LINE__ - 4));
-        exit(EXIT_FAILURE);
+        return wait_for_fwd(thrid_fwd);
     }
 
     /* RF channel */
@@ -383,7 +362,7 @@ int main(int argc, char **argv)
         buff_index += i;
     } else {
         MSG("ERROR: snprintf failed line %u\n", (__LINE__ - 4));
-        exit(EXIT_FAILURE);
+        return wait_for_fwd(thrid_fwd);
     }
 
     /* modulation type and parameters */
@@ -393,7 +372,7 @@ int main(int argc, char **argv)
             buff_index += i;
         } else {
             MSG("ERROR: snprintf failed line %u\n", (__LINE__ - 4));
-            exit(EXIT_FAILURE);
+            return wait_for_fwd(thrid_fwd);
         }
     } else {
         i = snprintf((char *)(databuf + buff_index), 50, ",\"modu\":\"LORA\",\"datr\":\"SF%iBW%i\",\"codr\":\"4/6\"", sf, bw);
@@ -401,7 +380,7 @@ int main(int argc, char **argv)
             buff_index += i;
         } else {
             MSG("ERROR: snprintf failed line %u\n", (__LINE__ - 4));
-            exit(EXIT_FAILURE);
+            return wait_for_fwd(thrid_fwd);
         }
     }
 
@@ -426,7 +405,7 @@ int main(int argc, char **argv)
         buff_index += i;
     } else {
         MSG("ERROR: snprintf failed line %u\n", (__LINE__ - 4));
-        exit(EXIT_FAILURE);
+        return wait_for_fwd(thrid_fwd);
     }
 
     /* payload JSON object */
@@ -440,7 +419,7 @@ int main(int argc, char **argv)
         buff_index += x;
     } else {
         MSG("ERROR: bin_to_b64 failed line %u\n", (__LINE__ - 4));
-        exit(EXIT_FAILURE);
+        return wait_for_fwd(thrid_fwd);
     }
 
     /* Close JSON structure */
@@ -476,27 +455,45 @@ int main(int argc, char **argv)
             memcpy((void *)(databuf + payload_index), (void *)payload_b64, x);
         } else {
             MSG("ERROR: bin_to_b64 failed line %u\n", (__LINE__ - 4));
-            exit(EXIT_FAILURE);
+            return wait_for_fwd(thrid_fwd);
         }
 
+        databuf[1] = (uint8_t)rand(); /* random token */
+        databuf[2] = (uint8_t)rand(); /* random token */
+
         /* send packet to the gateway */
-        byte_nb = sendto(sock, (void *)databuf, buff_index, 0, (struct sockaddr *)&dist_addr, addr_len);
+        byte_nb = send_to(downlink, (void *)databuf, buff_index, -1, NULL);
         if (byte_nb == -1) {
-            MSG("WARNING: sendto returned an error %s\n", strerror(errno));
+            if (errno == EBADF) {
+                return wait_for_fwd(thrid_fwd);
+            }
+            MSG("WARNING: send_to returned an error %s\n", strerror(errno));
         } else {
             MSG("INFO: packet #%i sent successfully\n", i);
         }
 
+        /* wait to receive a TX_ACK request packet */
+        MSG("INFO: waiting to receive a TX_ACK request\n");
+        while (1) {
+            byte_nb = recv_from(downlink, databuf2, sizeof databuf2, NULL);
+            if (byte_nb < 0) {
+                if (errno == EBADF) {
+                    return wait_for_fwd(thrid_fwd);
+                }
+                MSG("WARNING: recv_from returned an error %s\n", strerror(errno));
+            } else if ((byte_nb < 12) || (databuf2[0] != PROTOCOL_VERSION) || (databuf2[3] != PKT_TX_ACK)) {
+                MSG("INFO: packet received, not TX_ACK request\n");
+            } else if ((databuf2[1] != databuf[1]) ||
+                       (databuf2[2] != databuf[2])) {
+                MSG("INFO: TX_ACK received but token doesn't match\n");
+            } else {
+                break; /* success! */
+            }
+        }
+
         /* wait inter-packet delay */
         usleep(delay * 1000);
-
-        /* exit loop on user signals */
-        if ((quit_sig == 1) || (exit_sig == 1)) {
-            break;
-        }
     }
-
-    exit(EXIT_SUCCESS);
 }
 
 /* --- EOF ------------------------------------------------------------------ */

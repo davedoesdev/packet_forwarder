@@ -145,9 +145,8 @@ static void *thread_ack(void *arg)
 
 int main(int argc, char **argv)
 {
-    struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
-
     /* configure signal handling */
+    struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
     sigemptyset(&sigact.sa_mask);
     sigact.sa_flags = 0;
     sigact.sa_handler = sig_handler;
@@ -160,13 +159,13 @@ int main(int argc, char **argv)
     if (pthread_create(&thrid_uplink, NULL, thread_ack, (void*)(intptr_t)uplink) != 0)
     {
         MSG("ERROR: failed to create uplink thread\n");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     if (pthread_create(&thrid_downlink, NULL, thread_ack, (void*)(intptr_t)downlink) != 0)
     {
         MSG("ERROR: failed to create downlink thread\n");
-        return 1;
+        return EXIT_FAILURE;
     }
 
 
