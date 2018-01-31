@@ -22,7 +22,7 @@ RELEASE_VERSION := `cat ../VERSION`
 CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
 
-CCFLAGS := -O2 -Wall -Wextra -Iinc -I. -fPIC
+CCFLAGS := -O2 -Wall -Wextra -Iinc -I. -fPIC -fexceptions
 CFLAGS := $(CCFLAGS) -std=c99 \
           -Dmain=$(APP_NAME)_main \
           -Dsocket=mem_socket \
