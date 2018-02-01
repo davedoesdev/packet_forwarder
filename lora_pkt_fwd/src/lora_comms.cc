@@ -313,11 +313,6 @@ int mem_shutdown(int sockfd, int)
         return -1;
     }
 
-    if (sockfd == downlink)
-    {
-        next_socket = 0;
-    }
-
     return 0;
 }
 
