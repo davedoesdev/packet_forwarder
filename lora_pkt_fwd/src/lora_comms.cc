@@ -218,7 +218,7 @@ struct ExitException : public std::exception
     int status;
 };
 
-std::chrono::microseconds to_microseconds(const struct timeval *tv)
+static std::chrono::microseconds to_microseconds(const struct timeval *tv)
 {
     return tv ? (tv->tv_sec * 1s + tv->tv_usec * 1us) : -1us;
 }
