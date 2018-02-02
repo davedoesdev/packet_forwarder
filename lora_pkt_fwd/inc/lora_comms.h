@@ -21,9 +21,9 @@ int start(const char *cfg_dir);
 /* Stop the packet forwarder. */
 void stop();
 
-/* Reset the packet forwarder to pre-start state. Call this if you've started
-   and stopped the packet forwarder and want to e.g. start send/recv threads
-   before calling start() again. */
+/* Reset the packet forwarder to pre-start state. Call this if you've previously
+   started and stopped the packet forwarder and want to start it again.
+   Ensure no threads are accessing the packet forwarder when you call this. */
 void reset();
 
 /* Read data packets (uplink) or ACK packets (downlink).

@@ -205,9 +205,12 @@ private:
     Queue<std::chrono::microseconds> from_fwd, to_fwd;
 };
 
-static int next_socket;
+static int next_socket = uplink;
 static Link links[2];
-static sighandler_t signal_handler;
+static sighandler_t signal_handler = nullptr;
+static bool signal_handler_called = false;
+static bool stop_requested = false;
+std::mutex stop_mutex;
 static std::string cfg_prefix;
 
 struct ExitException : public std::exception
@@ -218,6 +221,35 @@ struct ExitException : public std::exception
 std::chrono::microseconds to_microseconds(const struct timeval *tv)
 {
     return tv ? (tv->tv_sec * 1s + tv->tv_usec * 1us) : -1us;
+}
+
+static void check_stop(sighandler_t handler, bool request_stop)
+{
+    sighandler_t h = nullptr;
+    {
+        std::unique_lock<std::mutex> lock(stop_mutex);
+
+        if (handler)
+        {
+            signal_handler = handler;
+        }
+
+        if (request_stop)
+        {
+            stop_requested = true;
+        }
+
+        if (signal_handler && stop_requested && !signal_handler_called)
+        {
+            h = signal_handler;
+            signal_handler_called = true;
+        }
+    }
+
+    if (h)
+    {
+        h(SIGTERM);
+    }
 }
 
 extern "C" {
@@ -329,7 +361,7 @@ void mem_sigaction(int signum,
 {
     if ((signum == SIGTERM) && act)
     {
-        signal_handler = act->sa_handler;
+        check_stop(act->sa_handler, false);
     }
 }
 
@@ -346,9 +378,6 @@ FILE *mem_fopen(const char *pathname, const char *mode)
 int start(const char *cfg_dir)
 {
     int r = EXIT_SUCCESS;
-
-    next_socket = 0;
-    signal_handler = nullptr;
 
     if (cfg_dir)
     {
@@ -377,16 +406,17 @@ int start(const char *cfg_dir)
 
 void stop()
 {
-    if (signal_handler)
-    {
-        signal_handler(SIGTERM);
-    }
+    check_stop(nullptr, true);
 }
 
 void reset()
 {
+    next_socket = uplink;
     links[uplink].reset();
     links[downlink].reset();
+    signal_handler = nullptr;
+    signal_handler_called = false;
+    stop_requested = false;
 }
 
 ssize_t recv_from(int link,
