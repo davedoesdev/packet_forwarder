@@ -104,6 +104,7 @@ Maintainer: Michael Coracin
 
 #define STATUS_SIZE     200
 #define TX_BUFF_SIZE    ((540 * NB_PKT_MAX) + 30 + STATUS_SIZE)
+#define RX_BUFF_SIZE    1000
 
 #define UNIX_GPS_EPOCH_OFFSET 315964800 /* Number of seconds ellapsed between 01.Jan.1970 00:00:00
                                                                           and 06.Jan.1980 00:00:00 */
@@ -1896,7 +1897,7 @@ void thread_down(void) {
     struct timespec recv_time; /* time of return from recv socket call */
 
     /* data buffers */
-    uint8_t buff_down[1000]; /* buffer to receive downstream packets */
+    uint8_t buff_down[RX_BUFF_SIZE]; /* buffer to receive downstream packets */
     uint8_t buff_req[12]; /* buffer to compose pull requests */
     int msg_len;
 
@@ -2886,5 +2887,10 @@ void thread_valid(void) {
     }
     MSG("\nINFO: End of validation thread\n");
 }
+
+const size_t recv_from_buflen = TX_BUFF_SIZE;
+const size_t send_to_buflen = RX_BUFF_SIZE;
+static_assert(TX_BUFF_SIZE >= RX_BUFF_SIZE,
+              "recv_from_buflen must be at least as large than send_to_buflen");
 
 /* --- EOF ------------------------------------------------------------------ */

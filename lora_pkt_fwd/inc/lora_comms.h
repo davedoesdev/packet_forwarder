@@ -29,7 +29,7 @@ void reset();
 /* Read data packets (uplink) or ACK packets (downlink).
    Negative or null timeout blocks. */
 ssize_t recv_from(int link,
-                  void * buf, size_t len,
+                  void *buf, size_t len,
                   const struct timeval *timeout);
 
 /* Write data packets (downlink) or ACK packets (uplink).
@@ -46,6 +46,9 @@ ssize_t send_to(int link,
 void set_gw_send_hwm(int link, const ssize_t hwm);
 void set_gw_send_timeout(int link, const struct timeval *timeout);
 void set_gw_recv_timeout(int link, const struct timeval *timeout);
+
+/* Recommended buffer sizes for reading and writing packets. */
+extern const size_t recv_from_buflen, send_to_buflen;
 
 #ifdef __cplusplus
 }

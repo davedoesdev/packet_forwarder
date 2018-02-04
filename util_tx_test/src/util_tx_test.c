@@ -140,8 +140,8 @@ int main(int argc, char **argv)
     uint8_t id = 0;
 
     /* variables for receiving and sending packets */
-    uint8_t databuf[500];
-    uint8_t databuf2[500];
+    uint8_t databuf[send_to_buflen];
+    uint8_t databuf2[recv_from_buflen];
     int buff_index;
     int byte_nb;
 

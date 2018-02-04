@@ -61,7 +61,7 @@ static void *thread_sink(void *arg)
     int link = (int)(intptr_t)arg;
 
     /* variables for receiving packets */
-    uint8_t databuf[4096];
+    uint8_t databuf[recv_from_buflen];
     int byte_nb;
 
     while (1)

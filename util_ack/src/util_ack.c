@@ -74,7 +74,7 @@ static void *thread_ack(void *arg)
     int link = (int)(intptr_t)arg;
 
     /* variables for receiving and sending packets */
-    uint8_t databuf[4096];
+    uint8_t databuf[recv_from_buflen];
     int byte_nb;
 
     /* variables for protocol management */

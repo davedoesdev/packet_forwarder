@@ -23,7 +23,7 @@ CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
 
 CCFLAGS := -O2 -Wall -Wextra -Iinc -I. -fPIC -fexceptions
-CFLAGS := $(CCFLAGS) -std=c99 \
+CFLAGS := $(CCFLAGS) -std=c11 \
           -Dmain=$(APP_NAME)_main \
           -Dsocket=mem_socket \
           -Dconnect=mem_connect \
