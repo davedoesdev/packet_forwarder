@@ -375,6 +375,39 @@ FILE *mem_fopen(const char *pathname, const char *mode)
     return fopen((cfg_prefix + pathname).c_str(), mode);
 }
 
+void mem_wait_ms(unsigned long a)
+{
+    struct timespec dly, slp;
+
+    dly.tv_sec = a / 1000;
+    dly.tv_nsec = (static_cast<long>(a) % 1000) * 1000000;
+
+    while ((dly.tv_sec > 0) || ((dly.tv_sec == 0) && (dly.tv_nsec > 100000)))
+    {
+        {
+            std::unique_lock<std::mutex> lock(stop_mutex);
+            if (signal_handler_called)
+            {
+                break;
+            }
+        }
+
+        fprintf(stderr, "NOTE dly: %ld sec %ld ns\n", dly.tv_sec, dly.tv_nsec);
+
+        slp.tv_sec = std::max(dly.tv_sec, static_cast<time_t>(1));
+        slp.tv_nsec = dly.tv_nsec;
+
+        if (clock_nanosleep(CLOCK_MONOTONIC, 0, &slp, NULL) != 0)
+        {
+            // original function doesn't loop on EINTR
+            break;
+        }
+
+        dly.tv_sec -= slp.tv_sec;
+        dly.tv_nsec = 0;
+    }
+}
+
 int start(const char *cfg_dir)
 {
     int r = EXIT_SUCCESS;
