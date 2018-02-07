@@ -145,6 +145,8 @@ static void *thread_ack(void *arg)
 
 int main(int argc, char **argv)
 {
+    set_logger(vfprintf);
+
     /* configure signal handling */
     struct sigaction sigact; /* SIGQUIT&SIGINT&SIGTERM signal handling */
     sigemptyset(&sigact.sa_mask);

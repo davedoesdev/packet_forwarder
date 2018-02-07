@@ -153,6 +153,8 @@ int main(int argc, char **argv)
     /* variable for configuration directory */
     char cfg_dir[1024] = {0};
 
+    set_logger(vfprintf);
+
     /* parse command line options */
     while ((i = getopt (argc, argv, "hc:f:m:s:b:d:r:p:z:t:x:v:i")) != -1) {
         switch (i) {

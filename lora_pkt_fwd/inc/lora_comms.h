@@ -50,6 +50,10 @@ void set_gw_recv_timeout(int link, const struct timeval *timeout);
 /* Recommended buffer sizes for reading and writing packets. */
 extern const size_t recv_from_buflen, send_to_buflen;
 
+/* Set a function to call with log messages */
+typedef int (*logger_fn)(FILE *stream, const char *format, va_list arg);
+void set_logger(logger_fn logger);
+
 #ifdef __cplusplus
 }
 #endif

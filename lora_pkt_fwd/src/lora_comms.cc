@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
@@ -212,6 +213,7 @@ static bool signal_handler_called = false;
 static bool stop_requested = false;
 std::mutex stop_mutex;
 static std::string cfg_prefix;
+static logger_fn logger = nullptr;
 
 struct ExitException : public std::exception
 {
@@ -406,6 +408,24 @@ void mem_wait_ms(unsigned long a)
     }
 }
 
+int mem_fprintf_chk(FILE *stream, int, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int r = logger ? logger(stream, format, ap) : 0;
+    va_end(ap);
+    return r;
+}
+
+int mem_printf_chk(int, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    int r = logger ? logger(stdout, format, ap) : 0; 
+    va_end(ap);
+    return r;
+}
+
 int start(const char *cfg_dir)
 {
     int r = EXIT_SUCCESS;
@@ -477,6 +497,11 @@ void set_gw_send_timeout(int link, const struct timeval *timeout)
 void set_gw_recv_timeout(int link, const struct timeval *timeout)
 {
     links[link].set_to_fwd_recv_timeout(to_microseconds(timeout));
+}
+
+void set_logger(logger_fn f)
+{
+    logger = f;
 }
 
 }
