@@ -392,8 +392,6 @@ void mem_wait_ms(unsigned long a)
             }
         }
 
-        fprintf(stderr, "NOTE dly: %ld sec %ld ns\n", dly.tv_sec, dly.tv_nsec);
-
         slp.tv_sec = std::min(dly.tv_sec, static_cast<time_t>(1));
         slp.tv_nsec = dly.tv_nsec;
 
