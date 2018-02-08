@@ -87,7 +87,7 @@ public:
         size += len;
         recv_cv.notify_all();
 
-        return 0;
+        return len;
     }
 
     ssize_t recv(void *buf, size_t len, const Duration &timeout)
