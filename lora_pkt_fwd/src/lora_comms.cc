@@ -12,6 +12,7 @@
 #include <vector>
 #include <chrono>
 #include <mutex>
+#include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <string>
@@ -213,7 +214,7 @@ static bool signal_handler_called = false;
 static bool stop_requested = false;
 std::mutex stop_mutex;
 static std::string cfg_prefix;
-static logger_fn logger = nullptr;
+static std::atomic<logger_fn> logger(nullptr);
 
 struct ExitException : public std::exception
 {
