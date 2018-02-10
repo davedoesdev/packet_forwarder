@@ -255,6 +255,14 @@ static void check_stop(sighandler_t handler, bool request_stop)
     }
 }
 
+static int log(FILE* stream, const char *format, va_list ap)
+{
+    logger_fn logf = logger;
+    int r = logf ? logf(stream, format, ap) : 0;
+    va_end(ap);
+    return r;
+}
+
 extern "C" {
 
 extern int lora_pkt_fwd_main();
@@ -409,22 +417,32 @@ void mem_wait_ms(unsigned long a)
     }
 }
 
-int mem_fprintf_chk(FILE *stream, int, const char *format, ...)
+int mem_printf(const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    int r = logger ? logger(stream, format, ap) : 0;
-    va_end(ap);
-    return r;
+    return log(stdout, format, ap);
+}
+
+int mem_fprintf(FILE *stream, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    return log(stream, format, ap);
 }
 
 int mem_printf_chk(int, const char *format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    int r = logger ? logger(stdout, format, ap) : 0; 
-    va_end(ap);
-    return r;
+    return log(stdout, format, ap);
+}
+
+int mem_fprintf_chk(FILE *stream, int, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    return log(stream, format, ap);
 }
 
 int start(const char *cfg_dir)

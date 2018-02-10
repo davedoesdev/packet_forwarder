@@ -36,6 +36,8 @@ CFLAGS := $(CCFLAGS) -std=c11 \
           -Daccess=mem_access \
           -Dfopen=mem_fopen \
           -Dwait_ms=mem_wait_ms \
+          -Dprintf=mem_printf \
+          -Dfprintf=mem_fprintf \
           -D__printf_chk=mem_printf_chk \
           -D__fprintf_chk=mem_fprintf_chk
 VFLAG := -D VERSION_STRING="\"$(RELEASE_VERSION)\""
