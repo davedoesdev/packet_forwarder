@@ -2891,6 +2891,6 @@ void thread_valid(void) {
 const size_t recv_from_buflen = TX_BUFF_SIZE;
 const size_t send_to_buflen = RX_BUFF_SIZE;
 static_assert(TX_BUFF_SIZE >= RX_BUFF_SIZE,
-              "recv_from_buflen must be at least as large than send_to_buflen");
+              "recv_from_buflen must be at least as big as send_to_buflen");
 
 /* --- EOF ------------------------------------------------------------------ */
