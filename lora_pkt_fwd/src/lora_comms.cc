@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <pthread.h>
 #include <queue>
 #include <vector>
 #include <chrono>
@@ -221,6 +222,12 @@ struct ExitException : public std::exception
     int status;
 };
 
+struct StartAndArg
+{
+    void *(*start_routine)(void*);
+    void *arg;
+};
+
 static std::chrono::microseconds to_microseconds(const struct timeval *tv)
 {
     return tv ? (tv->tv_sec * 1s + tv->tv_usec * 1us) : -1us;
@@ -252,6 +259,23 @@ static void check_stop(sighandler_t handler, bool request_stop)
     if (h)
     {
         h(SIGTERM);
+    }
+}
+
+static void *with_catcher(void *arg)
+{
+    try
+    {
+        auto arg2 = static_cast<StartAndArg*>(arg);
+        auto start_routine = arg2->start_routine;
+        arg = arg2->arg;
+        delete arg2;
+        return start_routine(arg);
+    }
+    catch (ExitException &e)
+    {
+        check_stop(nullptr, true);
+        return nullptr;
     }
 }
 
@@ -364,6 +388,26 @@ void mem_exit(int status)
     ExitException e;
     e.status = status;
     throw e;
+}
+
+int mem_pthread_create(pthread_t *thread,
+                       const pthread_attr_t *attr,
+                       void *(*start_routine)(void*),
+                       void *arg)
+{
+    auto arg2 = new StartAndArg();
+    arg2->start_routine = start_routine;
+    arg2->arg = arg;
+    return pthread_create(thread, attr, with_catcher, arg2);
+}
+
+int mem_pthread_cancel(pthread_t thread)
+{
+    // TODO: thread_gps does a blocking read so we may want to force it to end.
+    // pthread_cancel isn't a great way of doing that since mutexs may not be
+    // unlocked. We need to get gps_tty_fd to error somehow, while allowing it
+    // to be closed.
+    return pthread_join(thread, NULL);
 }
 
 void mem_sigaction(int signum,

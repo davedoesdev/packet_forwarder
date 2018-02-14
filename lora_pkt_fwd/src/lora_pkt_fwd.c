@@ -2083,7 +2083,8 @@ void thread_down(void) {
 
         /* listen to packets and process them until a new PULL request must be sent */
         recv_time = send_time;
-        while ((int)difftimespec(recv_time, send_time) < keepalive_time) {
+        while ((int)difftimespec(recv_time, send_time) < keepalive_time &&
+               !exit_sig && !quit_sig) {
 
             /* try to receive a datagram */
             msg_len = recv(sock_down, (void *)buff_down, (sizeof buff_down)-1, 0);

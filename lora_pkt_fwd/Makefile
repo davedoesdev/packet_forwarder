@@ -32,6 +32,8 @@ CFLAGS := $(CCFLAGS) -std=c11 \
           -Drecv=mem_recv \
           -Dshutdown=mem_shutdown \
           -Dexit=mem_exit \
+          -Dpthread_create=mem_pthread_create \
+          -Dpthread_cancel=mem_pthread_cancel \
           -Dsigaction=mem_sigaction \
           -Daccess=mem_access \
           -Dfopen=mem_fopen \
