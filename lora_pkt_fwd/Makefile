@@ -38,6 +38,7 @@ CFLAGS := $(CCFLAGS) -std=c11 \
           -Daccess=mem_access \
           -Dfopen=mem_fopen \
           -Dwait_ms=mem_wait_ms \
+          -Dread=mem_read \
           -Dprintf=mem_printf \
           -Dfprintf=mem_fprintf \
           -D__printf_chk=mem_printf_chk \

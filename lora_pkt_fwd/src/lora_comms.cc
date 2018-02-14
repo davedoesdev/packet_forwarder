@@ -9,6 +9,7 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
+#include <poll.h>
 #include <queue>
 #include <vector>
 #include <chrono>
@@ -403,10 +404,6 @@ int mem_pthread_create(pthread_t *thread,
 
 int mem_pthread_cancel(pthread_t thread)
 {
-    // TODO: thread_gps does a blocking read so we may want to force it to end.
-    // pthread_cancel isn't a great way of doing that since mutexs may not be
-    // unlocked. We need to get gps_tty_fd to error somehow, while allowing it
-    // to be closed.
     return pthread_join(thread, NULL);
 }
 
@@ -458,6 +455,29 @@ void mem_wait_ms(unsigned long a)
 
         dly.tv_sec -= slp.tv_sec;
         dly.tv_nsec = 0;
+    }
+}
+
+ssize_t mem_read(int fd, void *buf, size_t count)
+{
+    struct pollfd fds;
+    fds.fd = fd;
+    fds.events = POLLIN;
+
+    while (true)
+    {
+        {
+            std::unique_lock<std::mutex> lock(stop_mutex);
+            if (signal_handler_called)
+            {
+                return 0;
+            }
+        }
+
+        if (poll(&fds, 1, 1000) > 0)
+        {
+            return read(fd, buf, count);
+        }
     }
 }
 
