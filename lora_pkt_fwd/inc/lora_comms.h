@@ -33,7 +33,9 @@ ssize_t recv_from(int link,
                   const struct timeval *timeout);
 
 /* Write data packets (downlink) or ACK packets (uplink).
-   Non-negative high-water mark means wait until link has <= hwm buffered bytes.
+   Positive high-water mark means wait until link has < hwm buffered bytes.
+   Negative high-water mark means don't wait (buffer or write straight away).
+   Zero high-water mark means write no data.
    Negative or null timeout blocks. */
 ssize_t send_to(int link,
                 const void *buf, size_t len,
