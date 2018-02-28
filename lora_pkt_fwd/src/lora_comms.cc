@@ -49,6 +49,8 @@ public:
     ssize_t send(const void *buf, size_t len,
                  ssize_t hwm, const Duration &timeout)
     {
+        len = std::min(send_to_buflen, len);
+
         std::unique_lock<std::mutex> lock(m);
 
         if (closed)
