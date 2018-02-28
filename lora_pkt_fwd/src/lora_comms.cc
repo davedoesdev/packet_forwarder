@@ -562,6 +562,12 @@ ssize_t recv_from(int link,
                   void *buf, size_t len,
                   const struct timeval *timeout)
 {
+    if ((link < uplink) || (link > downlink))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
     return links[link].from_fwd_recv(buf, len, to_microseconds(timeout));
 }
 
@@ -569,21 +575,42 @@ ssize_t send_to(int link,
                 const void *buf, size_t len,
                 ssize_t hwm, const struct timeval *timeout)
 {
+    if ((link < uplink) || (link > downlink))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
     return links[link].to_fwd_send(buf, len, hwm, to_microseconds(timeout));
 }
 
 void set_gw_send_hwm(int link, const ssize_t hwm)
 {
+    if ((link < uplink) || (link > downlink))
+    {
+        return;
+    }
+
     links[link].set_from_fwd_send_hwm(hwm);
 }
 
 void set_gw_send_timeout(int link, const struct timeval *timeout)
 {
+    if ((link < uplink) || (link > downlink))
+    {
+        return;
+    }
+
     links[link].set_from_fwd_send_timeout(to_microseconds(timeout));
 }
 
 void set_gw_recv_timeout(int link, const struct timeval *timeout)
 {
+    if ((link < uplink) || (link > downlink))
+    {
+        return;
+    }
+
     links[link].set_to_fwd_recv_timeout(to_microseconds(timeout));
 }
 
