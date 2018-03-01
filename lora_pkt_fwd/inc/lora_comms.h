@@ -53,6 +53,7 @@ void set_gw_recv_timeout(int link, const struct timeval *timeout);
 extern const size_t recv_from_buflen, send_to_buflen;
 
 /* Set a function to call with log messages.
+   stream will be stdout or stderr.
    Null logger disables logging. */
 typedef int (*logger_fn)(FILE *stream, const char *format, va_list arg);
 void set_logger(logger_fn logger);
