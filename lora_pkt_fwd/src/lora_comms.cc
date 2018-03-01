@@ -289,6 +289,11 @@ static void *with_catcher(void *arg)
 
 static int log(FILE* stream, const char *format, va_list ap)
 {
+    if ((stream != stdout) && (stream != stderr))
+    {
+        return vfprintf(stream, format, ap);
+    }
+
     logger_fn logf = logger;
     int r = logf ? logf(stream, format, ap) : 0;
     va_end(ap);
