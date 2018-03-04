@@ -497,6 +497,7 @@ int main(int argc, char **argv)
         usleep(delay * 1000);
     }
 
+    stop();
     return wait_for_fwd(thrid_fwd);
 }
 
