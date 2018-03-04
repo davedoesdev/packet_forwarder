@@ -496,6 +496,8 @@ int main(int argc, char **argv)
         /* wait inter-packet delay */
         usleep(delay * 1000);
     }
+
+    return wait_for_fwd(thrid_fwd);
 }
 
 /* --- EOF ------------------------------------------------------------------ */

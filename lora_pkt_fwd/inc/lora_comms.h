@@ -61,6 +61,7 @@ extern const size_t recv_from_buflen, send_to_buflen;
 typedef int (*logger_fn)(FILE *stream, const char *format, va_list arg);
 void set_logger(logger_fn logger);
 
+#ifdef __cplusplus
 /* Function which logs messages to internal queues.
    Use set_logger(log_to_queues) to install it.
    Use get_log_info_message and get_log_error_message to read log messages. */
@@ -91,6 +92,5 @@ void set_log_max_msg_size(size_t max_size);
 void set_log_write_hwm(ssize_t hwm);
 void set_log_write_timeout(const struct timeval *timeout);
 
-#ifdef __cplusplus
 }
 #endif
