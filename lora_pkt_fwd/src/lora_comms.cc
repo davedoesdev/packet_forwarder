@@ -23,34 +23,38 @@
 
 using namespace std::chrono_literals;
 
-template<typename Duration>
-class Queue
+template<typename Duration, typename Element>
+class WaitQueue
 {
-public:
-    typedef std::vector<uint8_t> element_t;
-    typedef std::queue<element_t> queue_t;
-
-    void reset()
+protected:
+    template<class Test>
+    void maybe_reset(Test test)
     {
-        closed = false;
+        std::unique_lock<std::mutex> lock(this->m);
+        if (test())
+        {
+            this->closed = false;
+        }
     }
 
-    void close()
+    template<class Test>
+    void maybe_close(Test test)
     {
-        std::unique_lock<std::mutex> lock(m);
-        queue_t empty;
-        std::swap(q, empty);
-        size = 0;
-        closed = true;
-        send_cv.notify_all();
-        recv_cv.notify_all();
+        std::unique_lock<std::mutex> lock(this->m);
+        if (test())
+        {
+            decltype(this->q) empty;
+            std::swap(this->q, empty);
+            this->size = 0;
+            this->closed = true;
+            this->send_cv.notify_all();
+            this->recv_cv.notify_all();
+        }
     }
 
-    ssize_t send(const void *buf, size_t len,
-                 ssize_t hwm, const Duration &timeout)
+    template<class Enqueue>
+    int enqueue(ssize_t hwm, const Duration &timeout, Enqueue enqueue)
     {
-        len = std::min(send_to_buflen, len);
-
         std::unique_lock<std::mutex> lock(m);
 
         if (closed)
@@ -66,40 +70,19 @@ public:
 
         if ((hwm > 0) && (size >= hwm))
         {
-            // wait until buffered data size < hwm
-            auto pred = [this, hwm]
+            int err = wait_for_hwm(hwm, timeout, lock);
+            if (err != 0)
             {
-                return closed || (this->size < hwm);
-            };
-
-            if (timeout < Duration::zero())
-            {
-                // timeout < 0 means block
-                send_cv.wait(lock, pred);
-            }
-            else if ((timeout == Duration::zero()) ||
-                     !send_cv.wait_for(lock, timeout, pred))
-            {
-                errno = EAGAIN;
-                return -1;
-            }
-
-            if (closed)
-            {
-                errno = EBADF;
+                errno = err;
                 return -1;
             }
         }
 
-        auto bytes = static_cast<const uint8_t*>(buf);
-        q.emplace(bytes, &bytes[len]);
-        size += len;
-        recv_cv.notify_all();
-
-        return len;
+        return enqueue();
     }
 
-    ssize_t recv(void *buf, size_t len, const Duration &timeout)
+    template<class Dequeue>
+    int dequeue(const Duration &timeout, Dequeue dequeue)
     {
         std::unique_lock<std::mutex> lock(m);
 
@@ -111,46 +94,182 @@ public:
 
         if (q.empty())
         {
-            auto pred = [this]
+            int err = wait_for_not_empty(timeout, lock);
+            if (err != 0)
             {
-                return closed || !this->q.empty();
-            };
-
-            if (timeout < Duration::zero())
-            {
-                // timeout < 0 means block
-                recv_cv.wait(lock, pred);
-            }
-            else if ((timeout == Duration::zero()) ||
-                     !recv_cv.wait_for(lock, timeout, pred))
-            {
-                errno = EAGAIN;
-                return -1;
-            }
-
-            if (closed)
-            {
-                errno = EBADF;
+                errno = err;
                 return -1;
             }
         }
 
-        element_t &el = q.front();
-        ssize_t r = std::min(el.size(), len);
-        memcpy(buf, el.data(), r);
-        q.pop();
-        size -= el.size();
-        send_cv.notify_all();
+        return dequeue();
+    }
 
-        return r;
+    virtual int wait_for_hwm(ssize_t hwm,
+                             const Duration &timeout,
+                             std::unique_lock<std::mutex>& lock)
+    {
+        return wait(timeout, lock, send_cv, [this, hwm]
+        {
+            // wait until buffered data size < hwm
+            return (size < hwm);
+        });
+    }
+
+    virtual int wait_for_not_empty(const Duration &timeout,
+                                   std::unique_lock<std::mutex>& lock)
+    {
+        return wait(timeout, lock, recv_cv, [this]
+        {
+            // wait until queue isn't empty
+            return !q.empty();
+        });
+    }
+
+    std::mutex m;
+    std::condition_variable send_cv, recv_cv;
+    std::queue<Element> q;
+    ssize_t size = 0;
+    bool closed = false;
+
+private:
+    template<class Predicate>
+    int wait(const Duration &timeout,
+             std::unique_lock<std::mutex>& lock,
+             std::condition_variable& cv,
+             Predicate pred)
+    {
+        auto closed_or_pred = [this, pred] 
+        {
+            return closed || pred();
+        };
+
+        if (timeout < Duration::zero())
+        {
+            // timeout < 0 means block
+            cv.wait(lock, closed_or_pred);
+        }
+        else if ((timeout == Duration::zero()) ||
+                 !cv.wait_for(lock, timeout, closed_or_pred))
+        {
+            return EAGAIN;
+        }
+
+        if (closed)
+        {
+            return EBADF;
+        }
+
+        return 0;
+    }
+};
+
+template<typename Duration>
+class Queue : public WaitQueue<Duration, std::vector<uint8_t>>
+{
+public:
+    void reset()
+    {
+        this->maybe_reset([] { return true; });
+    }
+
+    void close()
+    {
+        this->maybe_close([] { return true; });
+    }
+
+    ssize_t send(const void *buf, size_t len,
+                 ssize_t hwm, const Duration &timeout)
+    {
+        return this->enqueue(hwm, timeout, [this, buf, len]
+        {
+            auto bytes = static_cast<const uint8_t*>(buf);
+            size_t len2 = std::min(send_to_buflen, len);
+            this->q.emplace(bytes, &bytes[len2]);
+            this->size += len2;
+            this->recv_cv.notify_all();
+            return len2;
+        });
+    }
+
+    ssize_t recv(void *buf, size_t len, const Duration &timeout)
+    {
+        return this->dequeue(timeout, [this, buf, len]
+        {
+            auto &el = this->q.front();
+            ssize_t r = std::min(el.size(), len);
+            memcpy(buf, el.data(), r);
+            this->q.pop();
+            this->size -= el.size();
+            this->send_cv.notify_all();
+            return r;
+        });
+    }
+};
+
+template<typename Duration>
+class LogQueue : public WaitQueue<Duration, std::string>
+{
+public:
+    void reset()
+    {
+        this->maybe_reset([this]
+        {
+            close_pending = false;
+            return true;
+        });
+    }
+
+    void close(bool immediately)
+    {
+        this->maybe_close([this, immediately]
+        {
+            close_pending = true;
+            return (immediately || this->q.empty());
+        });
+    }
+
+    ssize_t write(const char *msg,
+                  ssize_t hwm,
+                  const Duration &timeout)
+    {
+        return this->enqueue(hwm, timeout, [this, msg]
+        {
+            this->q.emplace(msg);
+            ssize_t r = this->q.back().size();
+            this->size += r;
+            this->recv_cv.notify_all();
+            return r;
+        });
+    }
+
+    ssize_t read(std::string& msg, const Duration &timeout)
+    {
+        return this->dequeue(timeout, [this, &msg]
+        {
+            msg = this->q.front();
+            this->q.pop();
+            this->size -= msg.size();
+            this->send_cv.notify_all();
+            return msg.size();
+        });
+    }
+
+protected:
+    virtual int wait_for_not_empty(const Duration &timeout,
+                                   std::unique_lock<std::mutex>& lock) override
+    {
+        if (close_pending)
+        {
+            this->closed = true;
+            return EBADF;
+        }
+
+        return WaitQueue<Duration, std::string>::wait_for_not_empty(timeout, lock);
     }
 
 private:
-    std::mutex m;
-    std::condition_variable send_cv, recv_cv;
-    queue_t q;
-    ssize_t size = 0;
-    bool closed = false;
+    bool close_pending = false;
 };
 
 class Link
@@ -224,6 +343,10 @@ static bool stop_requested = false;
 std::mutex stop_mutex;
 static std::string cfg_prefix;
 static std::atomic<logger_fn> logger(nullptr);
+static LogQueue<std::chrono::microseconds> log_info, log_error;
+static size_t log_max_msg_size = 1024;
+static ssize_t log_write_hwm = -1;
+static std::chrono::microseconds log_write_timeout = -1us;
 
 struct ExitException : public std::exception
 {
@@ -624,6 +747,60 @@ void set_gw_recv_timeout(int link, const struct timeval *timeout)
 void set_logger(logger_fn f)
 {
     logger = f;
+}
+
+int log_to_queues(FILE *stream, const char *format, va_list ap)
+{
+    std::vector<char> msg(log_max_msg_size);
+    vsnprintf(msg.data(), log_max_msg_size, format, ap);
+
+    auto log = &log_error;
+
+    if (stream == stdout)
+    {
+        log = &log_info;
+    }
+
+    return log->write(msg.data(), log_write_hwm, log_write_timeout);
+}
+
+void close_log_queues(bool immediately)
+{
+    log_info.close(immediately);
+    log_error.close(immediately);
+}
+
+void reset_log_queues()
+{
+    log_info.reset();
+    log_error.reset();
+}
+
+ssize_t get_log_info_message(std::string &msg,
+                             const struct timeval *timeout)
+{
+    return log_info.read(msg, to_microseconds(timeout));
+}
+
+ssize_t get_log_error_message(std::string &msg,
+                              const struct timeval *timeout)
+{
+    return log_error.read(msg, to_microseconds(timeout));
+}
+
+void set_log_max_msg_size(size_t max_size)
+{
+    log_max_msg_size = max_size;
+}
+
+void set_log_write_hwm(ssize_t hwm)
+{
+    log_write_hwm = hwm;
+}
+
+void set_log_write_timeout(const struct timeval *timeout)
+{
+    log_write_timeout = to_microseconds(timeout);
 }
 
 }

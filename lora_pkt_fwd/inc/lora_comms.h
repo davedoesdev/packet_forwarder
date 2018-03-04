@@ -27,7 +27,8 @@ void stop();
 void reset();
 
 /* Read data packets (uplink) or ACK packets (downlink).
-   Negative or null timeout blocks. */
+   Negative or null timeout blocks.
+   Returns number of bytes read or -1 on error and sets errno. */
 ssize_t recv_from(int link,
                   void *buf, size_t len,
                   const struct timeval *timeout);
@@ -36,7 +37,8 @@ ssize_t recv_from(int link,
    Positive high-water mark means wait until link has < hwm buffered bytes.
    Negative high-water mark means don't wait (buffer or write straight away).
    Zero high-water mark means write no data.
-   Negative or null timeout blocks. */
+   Negative or null timeout blocks.
+   Returns number of bytes written or -1 on error and sets errno. */
 ssize_t send_to(int link,
                 const void *buf, size_t len,
                 ssize_t hwm, const struct timeval *timeout);
@@ -54,9 +56,40 @@ extern const size_t recv_from_buflen, send_to_buflen;
 
 /* Set a function to call with log messages.
    stream will be stdout or stderr.
-   Null logger disables logging. */
+   Null logger disables logging (the default).
+   Use set_logger(vfprintf) to log to stdio. */
 typedef int (*logger_fn)(FILE *stream, const char *format, va_list arg);
 void set_logger(logger_fn logger);
+
+/* Function which logs messages to internal queues.
+   Use set_logger(log_to_queues) to install it.
+   Use get_log_info_message and get_log_error_message to read log messages. */
+int log_to_queues(FILE *stream, const char *format, va_list arg);
+
+/* Close the log queues, either immediately or when empty. */
+void close_log_queues(bool immediately);
+
+/* Re-open the log queues. */
+void reset_log_queues();
+
+/* Read next informational log message from log queue.
+   msg receives the message.
+   Negative or null timeout blocks.
+   Returns number of bytes read or -1 on error and sets errno. */
+ssize_t get_log_info_message(std::string &msg, const struct timeval *timeout);
+
+/* Read next eror log message from log queue.
+   msg receives the message.
+   Negative or null timeout blocks.
+   Returns number of bytes read or -1 on error and sets errno. */
+ssize_t get_log_error_message(std::string &msg, const struct timeval *timeout);
+
+/* You probably won't need these log functions but they set the timeout,
+   high-water mark and maximum log message size if log queues are enabled,
+   i.e. you called set_logger(log_to_queues). */
+void set_log_max_msg_size(size_t max_size);
+void set_log_write_hwm(ssize_t hwm);
+void set_log_write_timeout(const struct timeval *timeout);
 
 #ifdef __cplusplus
 }
