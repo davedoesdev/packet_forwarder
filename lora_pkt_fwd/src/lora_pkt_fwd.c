@@ -1201,6 +1201,10 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
+    /* set the concentrator time first to fix race between thread_timersync
+       and thread_jit */
+    set_concentrator_time();
+
     /* spawn threads to manage upstream and downstream */
     i = pthread_create( &thrid_up, NULL, (void * (*)(void *))thread_up, NULL);
     if (i != 0) {
