@@ -75,6 +75,7 @@ void reset_log_queues();
 
 typedef ssize_t (*get_log_message_fn)(std::string& msg,
                                       const struct timeval *timeout);
+
 /* Read next informational log message from log queue.
    msg receives the message.
    Negative or null timeout blocks.
