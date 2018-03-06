@@ -30,25 +30,25 @@ protected:
     template<class Test>
     void maybe_reset(Test test)
     {
-        std::unique_lock<std::mutex> lock(this->m);
+        std::unique_lock<std::mutex> lock(m);
         if (test())
         {
-            this->closed = false;
+            closed = false;
         }
     }
 
     template<class Test>
     void maybe_close(Test test)
     {
-        std::unique_lock<std::mutex> lock(this->m);
+        std::unique_lock<std::mutex> lock(m);
         if (test())
         {
-            decltype(this->q) empty;
-            std::swap(this->q, empty);
-            this->size = 0;
-            this->closed = true;
-            this->send_cv.notify_all();
-            this->recv_cv.notify_all();
+            decltype(q) empty;
+            std::swap(q, empty);
+            size = 0;
+            closed = true;
+            send_cv.notify_all();
+            recv_cv.notify_all();
         }
     }
 
@@ -425,6 +425,7 @@ static int log(FILE* stream, const char *format, va_list ap)
 
 extern "C" {
 
+extern volatile bool exit_sig, quit_sig;
 extern int lora_pkt_fwd_main();
 
 int mem_socket(int, int, int)
@@ -686,6 +687,8 @@ void reset()
     signal_handler = nullptr;
     signal_handler_called = false;
     stop_requested = false;
+    exit_sig = false;
+    quit_sig = false;
 }
 
 ssize_t recv_from(int link,
