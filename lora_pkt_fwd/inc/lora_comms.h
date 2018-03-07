@@ -95,6 +95,7 @@ ssize_t get_log_error_message(char *msg, size_t len,
 void set_log_write_hwm(ssize_t hwm);
 void set_log_write_timeout(const struct timeval *timeout);
 void set_log_max_msg_size(size_t max_size);
+size_t get_log_max_msg_size();
 
 #ifdef __cplusplus
 }

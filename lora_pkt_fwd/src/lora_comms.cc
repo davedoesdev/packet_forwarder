@@ -272,6 +272,11 @@ public:
         this->send_buflen = max_size;
     }
 
+    size_t get_max_msg_size()
+    {
+        return this->send_buflen;
+    }
+
 protected:
     int wait_for_not_empty(const Duration &timeout,
                            std::unique_lock<std::mutex>& lock) override
@@ -827,6 +832,12 @@ void set_log_max_msg_size(size_t max_size)
 {
     log_info.set_max_msg_size(max_size);
     log_error.set_max_msg_size(max_size);
+}
+
+size_t get_log_max_msg_size()
+{
+    return std::max(log_info.get_max_msg_size(),
+                    log_error.get_max_msg_size());
 }
 
 }
