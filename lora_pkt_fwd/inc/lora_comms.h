@@ -61,7 +61,6 @@ extern const size_t recv_from_buflen, send_to_buflen;
 typedef int (*logger_fn)(FILE *stream, const char *format, va_list arg);
 void set_logger(logger_fn logger);
 
-#ifdef __cplusplus
 /* Function which logs messages to internal queues.
    Use set_logger(log_to_queues) to install it.
    Use get_log_info_message and get_log_error_message to read log messages. */
@@ -73,27 +72,30 @@ void close_log_queues(bool immediately);
 /* Re-open the log queues. */
 void reset_log_queues();
 
-typedef ssize_t (*get_log_message_fn)(std::string& msg,
+typedef ssize_t (*get_log_message_fn)(char *msg, size_t len,
                                       const struct timeval *timeout);
 
 /* Read next informational log message from log queue.
-   msg receives the message.
+   msg (size len) receives the message.
    Negative or null timeout blocks.
    Returns number of bytes read or -1 on error and sets errno. */
-ssize_t get_log_info_message(std::string &msg, const struct timeval *timeout);
+ssize_t get_log_info_message(char *msg, size_t len,
+                             const struct timeval *timeout);
 
-/* Read next eror log message from log queue.
-   msg receives the message.
+/* Read next error log message from log queue.
+   msg (size len) receives the message.
    Negative or null timeout blocks.
    Returns number of bytes read or -1 on error and sets errno. */
-ssize_t get_log_error_message(std::string &msg, const struct timeval *timeout);
+ssize_t get_log_error_message(char *msg, size_t len,
+                              const struct timeval *timeout);
 
 /* You probably won't need these log functions but they set the timeout,
    high-water mark and maximum log message size if log queues are enabled,
    i.e. you called set_logger(log_to_queues). */
-void set_log_max_msg_size(size_t max_size);
 void set_log_write_hwm(ssize_t hwm);
 void set_log_write_timeout(const struct timeval *timeout);
+void set_log_max_msg_size(size_t max_size);
 
+#ifdef __cplusplus
 }
 #endif

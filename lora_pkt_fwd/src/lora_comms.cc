@@ -168,6 +168,11 @@ template<typename Duration>
 class Queue : public WaitQueue<Duration, std::vector<uint8_t>>
 {
 public:
+    Queue(const size_t send_buflen) :
+        send_buflen(send_buflen)
+    {
+    }
+
     void reset()
     {
         this->maybe_reset([] { return true; });
@@ -184,7 +189,7 @@ public:
         return this->enqueue(hwm, timeout, [this, buf, len]
         {
             auto bytes = static_cast<const uint8_t*>(buf);
-            size_t len2 = std::min(send_to_buflen, len);
+            size_t len2 = std::min(send_buflen, len);
             this->q.emplace(bytes, &bytes[len2]);
             this->size += len2;
             this->recv_cv.notify_all();
@@ -205,12 +210,24 @@ public:
             return r;
         });
     }
+
+protected:
+    size_t send_buflen;
 };
 
 template<typename Duration>
-class LogQueue : public WaitQueue<Duration, std::string>
+class LogQueue : public Queue<Duration>
 {
 public:
+    LogQueue(const size_t send_buflen = 1024,
+             const ssize_t write_hwm = -1,
+             const Duration &write_timeout = -1us) :
+        Queue<Duration>(send_buflen),
+        write_hwm(write_hwm),
+        write_timeout(write_timeout)
+    {
+    }
+
     void reset()
     {
         this->maybe_reset([this]
@@ -229,35 +246,35 @@ public:
         });
     }
 
-    ssize_t write(const char *msg,
-                  ssize_t hwm,
-                  const Duration &timeout)
+    ssize_t write(const char *format, va_list ap)
     {
-        return this->enqueue(hwm, timeout, [this, msg]
+        std::vector<char> msg(this->send_buflen + 1);
+        int n = vsnprintf(msg.data(), this->send_buflen + 1, format, ap);
+        if (n <= 0)
         {
-            this->q.emplace(msg);
-            ssize_t r = this->q.back().size();
-            this->size += r;
-            this->recv_cv.notify_all();
-            return r;
-        });
+            return n;
+        }
+        return this->send(msg.data(), n, write_hwm, write_timeout);
     }
 
-    ssize_t read(std::string& msg, const Duration &timeout)
+    void set_write_hwm(ssize_t hwm)
     {
-        return this->dequeue(timeout, [this, &msg]
-        {
-            msg = this->q.front();
-            this->q.pop();
-            this->size -= msg.size();
-            this->send_cv.notify_all();
-            return msg.size();
-        });
+        write_hwm = hwm;
+    }
+
+    void set_write_timeout(const Duration &timeout)
+    {
+        write_timeout = timeout;
+    }
+
+    void set_max_msg_size(size_t max_size)
+    {
+        this->send_buflen = max_size;
     }
 
 protected:
-    virtual int wait_for_not_empty(const Duration &timeout,
-                                   std::unique_lock<std::mutex>& lock) override
+    int wait_for_not_empty(const Duration &timeout,
+                           std::unique_lock<std::mutex>& lock) override
     {
         if (close_pending)
         {
@@ -265,16 +282,24 @@ protected:
             return EBADF;
         }
 
-        return WaitQueue<Duration, std::string>::wait_for_not_empty(timeout, lock);
+        return Queue<Duration>::wait_for_not_empty(timeout, lock);
     }
 
 private:
     bool close_pending = false;
+    ssize_t write_hwm;
+    Duration write_timeout;
 };
 
 class Link
 {
 public:
+    Link() : 
+        from_fwd(recv_from_buflen),
+        to_fwd(send_to_buflen)
+    {
+    }
+
     void reset()
     {
         from_fwd_send_hwm = -1;
@@ -344,9 +369,6 @@ std::mutex stop_mutex;
 static std::string cfg_prefix;
 static std::atomic<logger_fn> logger(nullptr);
 static LogQueue<std::chrono::microseconds> log_info, log_error;
-static size_t log_max_msg_size = 1024;
-static ssize_t log_write_hwm = -1;
-static std::chrono::microseconds log_write_timeout = -1us;
 
 struct ExitException : public std::exception
 {
@@ -754,9 +776,6 @@ void set_logger(logger_fn f)
 
 int log_to_queues(FILE *stream, const char *format, va_list ap)
 {
-    std::vector<char> msg(log_max_msg_size);
-    vsnprintf(msg.data(), log_max_msg_size, format, ap);
-
     auto log = &log_error;
 
     if (stream == stdout)
@@ -764,7 +783,7 @@ int log_to_queues(FILE *stream, const char *format, va_list ap)
         log = &log_info;
     }
 
-    return log->write(msg.data(), log_write_hwm, log_write_timeout);
+    return log->write(format, ap);
 }
 
 void close_log_queues(bool immediately)
@@ -779,31 +798,35 @@ void reset_log_queues()
     log_error.reset();
 }
 
-ssize_t get_log_info_message(std::string &msg,
+ssize_t get_log_info_message(char *msg, size_t len,
                              const struct timeval *timeout)
 {
-    return log_info.read(msg, to_microseconds(timeout));
+    return log_info.recv(msg, len, to_microseconds(timeout));
 }
 
-ssize_t get_log_error_message(std::string &msg,
+ssize_t get_log_error_message(char *msg, size_t len,
                               const struct timeval *timeout)
 {
-    return log_error.read(msg, to_microseconds(timeout));
-}
-
-void set_log_max_msg_size(size_t max_size)
-{
-    log_max_msg_size = max_size;
+    return log_error.recv(msg, len, to_microseconds(timeout));
 }
 
 void set_log_write_hwm(ssize_t hwm)
 {
-    log_write_hwm = hwm;
+    log_info.set_write_hwm(hwm);
+    log_error.set_write_hwm(hwm);
 }
 
 void set_log_write_timeout(const struct timeval *timeout)
 {
-    log_write_timeout = to_microseconds(timeout);
+    auto timeout_ms = to_microseconds(timeout);
+    log_info.set_write_timeout(timeout_ms);
+    log_error.set_write_timeout(timeout_ms);
+}
+
+void set_log_max_msg_size(size_t max_size)
+{
+    log_info.set_max_msg_size(max_size);
+    log_error.set_max_msg_size(max_size);
 }
 
 }
