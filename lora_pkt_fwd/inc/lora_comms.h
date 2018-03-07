@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <sys/time.h>
 
 const int uplink = 0,   /* Read data packets, write ACK packets. */
