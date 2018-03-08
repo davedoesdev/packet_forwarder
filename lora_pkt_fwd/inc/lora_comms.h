@@ -1,5 +1,5 @@
 /* Read and write LoRa packets. Uses a modified version of the packet forwarder
-   which uses in-memory queues instead of UDP. */
+   with in-memory queues instead of UDP. */
 
 #pragma once
 
@@ -7,8 +7,11 @@
 #include <stdbool.h>
 #include <sys/time.h>
 
-const int uplink = 0,   /* Read data packets, write ACK packets. */
-          downlink = 1; /* Write data packets, read ACK packets. */
+enum comm_link
+{
+    uplink = 0,  /* Read data packets, write ACK packets. */
+    downlink = 1 /* Write data packets, read ACK packets. */
+};
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,7 +33,7 @@ void reset();
 /* Read data packets (uplink) or ACK packets (downlink).
    Negative or null timeout blocks.
    Returns number of bytes read or -1 on error and sets errno. */
-ssize_t recv_from(int link,
+ssize_t recv_from(enum comm_link link,
                   void *buf, size_t len,
                   const struct timeval *timeout);
 
@@ -40,17 +43,9 @@ ssize_t recv_from(int link,
    Zero high-water mark means write no data.
    Negative or null timeout blocks.
    Returns number of bytes written or -1 on error and sets errno. */
-ssize_t send_to(int link,
+ssize_t send_to(enum comm_link link,
                 const void *buf, size_t len,
                 ssize_t hwm, const struct timeval *timeout);
-
-/* You probably won't need these gateway functions but they set the timeout and
-   high-water mark when the packet forwarder read and writes to the in-memory
-   queues. Note the packet forwarder already sets its read timeout through
-   setsockopt(SO_RCVTIMEO), which we intercept in the library. */
-void set_gw_send_hwm(int link, const ssize_t hwm);
-void set_gw_send_timeout(int link, const struct timeval *timeout);
-void set_gw_recv_timeout(int link, const struct timeval *timeout);
 
 /* Recommended buffer sizes for reading and writing packets. */
 extern const size_t recv_from_buflen, send_to_buflen;
@@ -73,9 +68,6 @@ void close_log_queues(bool immediately);
 /* Re-open the log queues. */
 void reset_log_queues();
 
-typedef ssize_t (*get_log_message_fn)(char *msg, size_t len,
-                                      const struct timeval *timeout);
-
 /* Read next informational log message from log queue.
    msg (size len) receives the message.
    Negative or null timeout blocks.
@@ -90,12 +82,7 @@ ssize_t get_log_info_message(char *msg, size_t len,
 ssize_t get_log_error_message(char *msg, size_t len,
                               const struct timeval *timeout);
 
-/* You probably won't need these log functions but they set the timeout,
-   high-water mark and maximum log message size if log queues are enabled,
-   i.e. you called set_logger(log_to_queues). */
-void set_log_write_hwm(ssize_t hwm);
-void set_log_write_timeout(const struct timeval *timeout);
-void set_log_max_msg_size(size_t max_size);
+/* Get the maximum log message size */
 size_t get_log_max_msg_size();
 
 #ifdef __cplusplus

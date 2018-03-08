@@ -19,7 +19,7 @@
 #include <exception>
 #include <string>
 
-#include "lora_comms.h"
+#include <lora_comms_int.h>
 
 using namespace std::chrono_literals;
 
@@ -718,7 +718,7 @@ void reset()
     quit_sig = false;
 }
 
-ssize_t recv_from(int link,
+ssize_t recv_from(enum comm_link link,
                   void *buf, size_t len,
                   const struct timeval *timeout)
 {
@@ -731,7 +731,7 @@ ssize_t recv_from(int link,
     return links[link].from_fwd_recv(buf, len, to_microseconds(timeout));
 }
 
-ssize_t send_to(int link,
+ssize_t send_to(enum comm_link link,
                 const void *buf, size_t len,
                 ssize_t hwm, const struct timeval *timeout)
 {
@@ -744,7 +744,7 @@ ssize_t send_to(int link,
     return links[link].to_fwd_send(buf, len, hwm, to_microseconds(timeout));
 }
 
-void set_gw_send_hwm(int link, const ssize_t hwm)
+void set_gw_send_hwm(enum comm_link link, const ssize_t hwm)
 {
     if ((link < uplink) || (link > downlink))
     {
@@ -754,7 +754,7 @@ void set_gw_send_hwm(int link, const ssize_t hwm)
     links[link].set_from_fwd_send_hwm(hwm);
 }
 
-void set_gw_send_timeout(int link, const struct timeval *timeout)
+void set_gw_send_timeout(enum comm_link link, const struct timeval *timeout)
 {
     if ((link < uplink) || (link > downlink))
     {
@@ -764,7 +764,7 @@ void set_gw_send_timeout(int link, const struct timeval *timeout)
     links[link].set_from_fwd_send_timeout(to_microseconds(timeout));
 }
 
-void set_gw_recv_timeout(int link, const struct timeval *timeout)
+void set_gw_recv_timeout(enum comm_link link, const struct timeval *timeout)
 {
     if ((link < uplink) || (link > downlink))
     {
