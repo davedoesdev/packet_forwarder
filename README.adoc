@@ -221,3 +221,24 @@ The forwarder will send back `TX_ACK` packets once it's broadcast the data.
 
 See the examples and link:PROTOCOL.TXT[] for information about the packet
 formats.
+
+== IMST iC880A-SPI reset
+
+If you're using an IMST iC880A-SPI, it needs to be reset after it's powered up.
+
+My iC880A-SPI is connected to a Pi via a
+https://shop.coredump.ch/product/ic880a-lorawan-gateway-backplane/[backplane]
+which brings the reset line out on GPIO 25. I run the following shell script
+to perform the reset:
+
+[source,sh]
+.iC880-SPI_reset.sh
+----
+echo "25" > /sys/class/gpio/export
+echo "out" > /sys/class/gpio/gpio25/direction
+echo "1" > /sys/class/gpio/gpio25/value
+sleep 5
+echo "0" > /sys/class/gpio/gpio25/value
+sleep 1
+echo "0" > /sys/class/gpio/gpio25/value
+----
