@@ -232,7 +232,7 @@ which brings the reset line out on GPIO 25. I run the following shell script
 to perform the reset:
 
 [source,sh]
-.iC880-SPI_reset.sh
+.iC880A-SPI_reset.sh
 ----
 echo "25" > /sys/class/gpio/export
 echo "out" > /sys/class/gpio/gpio25/direction
