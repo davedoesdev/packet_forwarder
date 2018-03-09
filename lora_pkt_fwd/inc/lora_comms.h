@@ -3,8 +3,10 @@
 
 #pragma once
 
-#include <stddef.h>
+#include <unistd.h>
+#include <stdio.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <sys/time.h>
 
 enum comm_link
@@ -19,7 +21,8 @@ extern "C" {
 
 /* Start the packet forwarder.
    This won't return until stop() is called on a separate thread.
-   Null configuration file directory means current directory. */
+   Null configuration file directory means current directory.
+   Returns EXIT_SUCCESS or EXIT_FAILURE. */
 int start(const char *cfg_dir);
 
 /* Stop the packet forwarder. */

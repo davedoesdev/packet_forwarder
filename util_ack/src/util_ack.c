@@ -12,6 +12,9 @@ Description:
 License: Revised BSD License, see LICENSE.TXT file include in the project
 Maintainer: Sylvain Miermont
 */
+/*
+Changes to work with packet_forwarder_shared (c)2018 David Halls, MIT licence
+*/
 
 
 /* -------------------------------------------------------------------------- */

@@ -1,3 +1,9 @@
+/*
+Shared library lifecycle and in-memory communication for packet forwarder
+Licence: MIT, see LICENCE.shared included in the project
+Maintainer: David Halls (c)2018
+*/
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <signal.h>

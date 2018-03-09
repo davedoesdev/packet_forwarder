@@ -1,0 +1,223 @@
+= packet_forwarder_shared
+:prewrap!:
+
+This is a fork of Semtech's https://github.com/Lora-net/packet_forwarder[LoRa packet forwarder]. The differences are:
+
+* It's a shared library rather than an executable. Your application can link
+  with it and start and stop the forwarder.
+
+* It reads and writes packets to memory rather than the network. Your
+  application can send and receive packets by calling API functions and passing
+  them memory buffers.
+
+== Example
+
+The following C code reads packets and sends back acknowledgements. It's an
+abbreviated version of the Semtech `util_ack` utility. Versions of the Semtech
+utilities converted to use packet_forwarder_shared can be found in the
+`util_sink`, `util_ack` and `util_tx_test` directories.
+
+[source,c]
+.example/example.c
+----
+#include <lora_comms.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <signal.h>
+
+#define PROTOCOL_VERSION 2
+
+#define PKT_PUSH_DATA    0
+#define PKT_PUSH_ACK     1
+#define PKT_PULL_DATA    2
+#define PKT_PULL_RESP    3
+#define PKT_PULL_ACK     4
+
+void *thread_ack(void *arg) {
+    int link = (int)(intptr_t)arg;
+    uint8_t databuf[recv_from_buflen];
+
+    while (1) {
+        /* wait to receive a packet */
+        ssize_t n = recv_from(link, databuf, sizeof databuf, NULL);
+        if (n == -1) {
+            return NULL;
+        }
+
+        if (n < 12) { /* not enough bytes for packet from gateway */
+            continue;
+        }
+
+        if (databuf[0] != PROTOCOL_VERSION) { /* check protocol version number */
+            continue;
+        }
+
+        if ((link == uplink) && (databuf[3] == PKT_PUSH_DATA)) {
+            databuf[3] = PKT_PUSH_ACK;
+        } else if ((link == downlink) && (databuf[3] == PKT_PULL_DATA)) {
+            databuf[3] = PKT_PULL_ACK;
+        } else {
+            continue;
+        }
+
+        /* send acknowledgement to forwarder */
+        n = send_to(link, (void*)databuf, 4, -1, NULL);
+        if (n == -1) {
+            return NULL;
+        }
+    }
+}
+
+void sig_handler(int signum __attribute__((unused))) {
+    stop();
+}
+
+int main(int argc, char **argv) {
+    set_logger(vfprintf);
+
+    struct sigaction sigact;
+    sigemptyset(&sigact.sa_mask);
+    sigact.sa_flags = 0;
+    sigact.sa_handler = sig_handler;
+    sigaction(SIGINT, &sigact, NULL); /* Ctrl-C */
+
+    pthread_t thrid_uplink, thrid_downlink;
+
+    if (pthread_create(&thrid_uplink, NULL, thread_ack, (void*)(intptr_t)uplink) != 0) {
+        return EXIT_FAILURE;
+    }
+
+    if (pthread_create(&thrid_downlink, NULL, thread_ack, (void*)(intptr_t)downlink) != 0) {
+        return EXIT_FAILURE;
+    }
+
+    int r = start(argc > 1 ? argv[1] : NULL);
+
+    pthread_join(thrid_uplink, NULL);
+    pthread_join(thrid_downlink, NULL);
+
+    return r;
+}
+----
+
+== Building
+
+First you need https://github.com/davedoesdev/lora_gateway_shared[lora_gateway_shared] in a directory alongside packet_forwarder_shared.
+Build lora_gateway_shared by running `make` in its directory.
+
+Then run `make` in the packet_forwarder_shared directory.
+
+This will produce `lora_pkt_fwd/liblora_pkt_fwd.so` as well as example programs
+`util_sink/util_sink`, `util_ack/util_ack`, `util_tx_test/util_tx_test` and
+`example/example`.
+
+The example programs should either be run from inside the `lora_pkt_fwd`
+directory or the path to the `lora_pkt_fwd` directory supplied as an argument
+(`util_tx_test` requires `-c` before the path). This is so `liblora_pkt_fwd`
+can find its configuration files.
+
+I've tested the examples on a Raspberry Pi 3 Model B with an IMST iC880A-SPI.
+
+== API
+
+`lora_pkt_fwd/inc/lora_comms.h` describes the functions exported by
+`liblora_pkt_fwd.so`:
+
+[source,c]
+.lora_pkt_fwd/inc/lora_comms.h
+----
+enum comm_link
+{
+    uplink = 0,  /* Read data packets, write ACK packets. */
+    downlink = 1 /* Write data packets, read ACK packets. */
+};
+
+/* Start the packet forwarder.
+   This won't return until stop() is called on a separate thread.
+   Null configuration file directory means current directory.
+   Returns EXIT_SUCCESS or EXIT_FAILURE. */
+int start(const char *cfg_dir);
+
+/* Stop the packet forwarder. */
+void stop();
+
+/* Reset the packet forwarder to pre-start state. Call this if you've previously
+   started and stopped the packet forwarder and want to start it again.
+   Ensure no threads are accessing the packet forwarder when you call this. */
+void reset();
+
+/* Read data packets (uplink) or ACK packets (downlink).
+   Negative or null timeout blocks.
+   Returns number of bytes read or -1 on error and sets errno. */
+ssize_t recv_from(enum comm_link link,
+                  void *buf, size_t len,
+                  const struct timeval *timeout);
+
+/* Write data packets (downlink) or ACK packets (uplink).
+   Positive high-water mark means wait until link has < hwm buffered bytes.
+   Negative high-water mark means don't wait (buffer or write straight away).
+   Zero high-water mark means write no data.
+   Negative or null timeout blocks.
+   Returns number of bytes written or -1 on error and sets errno. */
+ssize_t send_to(enum comm_link link,
+                const void *buf, size_t len,
+                ssize_t hwm, const struct timeval *timeout);
+
+/* Recommended buffer sizes for reading and writing packets. */
+extern const size_t recv_from_buflen, send_to_buflen;
+
+/* Set a function to call with log messages.
+   stream will be stdout or stderr.
+   Null logger disables logging (the default).
+   Use set_logger(vfprintf) to log to stdio. */
+typedef int (*logger_fn)(FILE *stream, const char *format, va_list arg);
+void set_logger(logger_fn logger);
+
+/* Function which logs messages to internal queues.
+   Use set_logger(log_to_queues) to install it.
+   Use get_log_info_message and get_log_error_message to read log messages. */
+int log_to_queues(FILE *stream, const char *format, va_list arg);
+
+/* Close the log queues, either immediately or when empty. */
+void close_log_queues(bool immediately);
+
+/* Re-open the log queues. */
+void reset_log_queues();
+
+/* Read next informational log message from log queue.
+   msg (size len) receives the message.
+   Negative or null timeout blocks.
+   Returns number of bytes read or -1 on error and sets errno. */
+ssize_t get_log_info_message(char *msg, size_t len,
+                             const struct timeval *timeout);
+
+/* Read next error log message from log queue.
+   msg (size len) receives the message.
+   Negative or null timeout blocks.
+   Returns number of bytes read or -1 on error and sets errno. */
+ssize_t get_log_error_message(char *msg, size_t len,
+                              const struct timeval *timeout);
+
+/* Get the maximum log message size */
+size_t get_log_max_msg_size();
+----
+
+Typically you'll `start` the forwarder on one thread and then `recv_from` and
+`send_to` the forwarder on another.
+
+Note you need to specify which _link_ to communicate with. The forwarder
+communicates on both `uplink` and `downlink`.
+
+On `uplink`, you'll receive `PUSH_DATA` packets which contain data received
+by the LoRa radio. You should send back `PUSH_ACK` packets to let the forwarder
+know you received the data.
+
+On `downlink`, you'll receive `PULL_DATA` packets which let your application
+know the forwarder is ready to broadcast data on the LoRa radio. You should
+send back `PULL_ACK` packets to let the forwarder know you received the request,
+followed by `PULL_RESP` packets containing data you wish to be broadcast.
+The forwarder will send back `TX_ACK` packets once it's broadcast the data.
+
+See the examples and link:PROTOCOL.TXT[] for information about the packet
+formats.
