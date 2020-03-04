@@ -65,6 +65,10 @@ Maintainer: Michael Coracin
 #define STRINGIFY(x)    #x
 #define STR(x)          STRINGIFY(x)
 
+#define STRNCPY_SAFE(DEST, SRC, N) \
+    strncpy(DEST, SRC, N - 1); \
+    DEST[N - 1] = '\0';
+
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS ---------------------------------------------------- */
 
@@ -131,7 +135,7 @@ static bool fwd_nocrc_pkt = false; /* packets with NO PAYLOAD CRC are NOT forwar
 
 /* network configuration variables */
 static uint64_t lgwm = 0; /* Lora gateway MAC address */
-static char serv_addr[64] = STR(DEFAULT_SERVER); /* address of the server (host name or IPv4/IPv6) */
+static char serv_addr[65] = STR(DEFAULT_SERVER); /* address of the server (host name or IPv4/IPv6) */
 static char serv_port_up[8] = STR(DEFAULT_PORT_UP); /* server port for upstream traffic */
 static char serv_port_down[8] = STR(DEFAULT_PORT_DW); /* server port for downstream traffic */
 static int keepalive_time = DEFAULT_KEEPALIVE; /* send a PULL_DATA request every X seconds, negative = disabled */
@@ -158,7 +162,7 @@ static bool xtal_correct_ok = false; /* set true when XTAL correction is stable 
 static double xtal_correct = 1.0;
 
 /* GPS configuration and synchronization */
-static char gps_tty_path[64] = "\0"; /* path of the TTY port GPS is connected on */
+static char gps_tty_path[65] = "\0"; /* path of the TTY port GPS is connected on */
 static int gps_tty_fd = -1; /* file descriptor of the GPS TTY port */
 static bool gps_enabled = false; /* is GPS enabled on that gateway ? */
 
@@ -695,7 +699,7 @@ static int parse_gateway_configuration(const char * conf_file) {
     /* server hostname or IP address (optional) */
     str = json_object_get_string(conf_obj, "server_address");
     if (str != NULL) {
-        strncpy(serv_addr, str, sizeof serv_addr);
+        STRNCPY_SAFE(serv_addr, str, sizeof serv_addr);
         MSG("INFO: server hostname or IP address is configured to \"%s\"\n", serv_addr);
     }
 
@@ -752,7 +756,7 @@ static int parse_gateway_configuration(const char * conf_file) {
     /* GPS module TTY path (optional) */
     str = json_object_get_string(conf_obj, "gps_tty_path");
     if (str != NULL) {
-        strncpy(gps_tty_path, str, sizeof gps_tty_path);
+        STRNCPY_SAFE(gps_tty_path, str, sizeof gps_tty_path);
         MSG("INFO: GPS serial port path is configured to \"%s\"\n", gps_tty_path);
     }
 

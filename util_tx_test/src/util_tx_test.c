@@ -154,7 +154,7 @@ int main(int argc, char **argv)
     uint64_t gw_mac; /* MAC address of the client (gateway) */
 
     /* variable for configuration directory */
-    char cfg_dir[1024] = {0};
+    char cfg_dir[1025] = {0};
 
     set_logger(vfprintf);
 
@@ -167,7 +167,7 @@ int main(int argc, char **argv)
                 break;
 
             case 'c': /* -c <str> configuration directory */
-                strncpy(cfg_dir, optarg, sizeof cfg_dir);
+                strncpy(cfg_dir, optarg, sizeof cfg_dir - 1);
                 break;
 
             case 'f': /* -f <float> target frequency in MHz */
