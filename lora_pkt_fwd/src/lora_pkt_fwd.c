@@ -58,6 +58,8 @@ Maintainer: Michael Coracin
 #include "loragw_aux.h"
 #include "loragw_reg.h"
 
+ssize_t mem_recv(int sockfd, void *buf, size_t len, int flags);
+
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
 
@@ -1865,7 +1867,7 @@ void thread_up(void) {
 
         /* wait for acknowledge (in 2 times, to catch extra packets) */
         for (i=0; i<2; ++i) {
-            j = recv(sock_up, (void *)buff_ack, sizeof buff_ack, 0);
+            j = mem_recv(sock_up, (void *)buff_ack, sizeof buff_ack, 0);
             clock_gettime(CLOCK_MONOTONIC, &recv_time);
             if (j == -1) {
                 if (errno == EAGAIN) { /* timeout */
@@ -2095,7 +2097,7 @@ void thread_down(void) {
                !exit_sig && !quit_sig) {
 
             /* try to receive a datagram */
-            msg_len = recv(sock_down, (void *)buff_down, (sizeof buff_down)-1, 0);
+            msg_len = mem_recv(sock_down, (void *)buff_down, (sizeof buff_down)-1, 0);
             clock_gettime(CLOCK_MONOTONIC, &recv_time);
 
             /* Pre-allocate beacon slots in JiT queue, to check downlink collisions */

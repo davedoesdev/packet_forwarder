@@ -29,7 +29,6 @@ CFLAGS := $(CCFLAGS) -std=c11 \
           -Dconnect=mem_connect \
           -Dsetsockopt=mem_setsockopt \
           -Dsend=mem_send \
-          -Drecv=mem_recv \
           -Dshutdown=mem_shutdown \
           -Dexit=mem_exit \
           -Dpthread_create=mem_pthread_create \
